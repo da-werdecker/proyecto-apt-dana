@@ -58,7 +58,7 @@ export default function WorkOrders() {
   const loadData = async () => {
     try {
       const hasEnv = Boolean(import.meta.env.VITE_SUPABASE_URL) && Boolean(import.meta.env.VITE_SUPABASE_ANON_KEY);
-      
+
       let ordersQuery = supabase
         .from('orden_trabajo')
         .select(`
@@ -69,6 +69,8 @@ export default function WorkOrders() {
         .order('fecha_inicio_ot', { ascending: false });
 
       let empleadoId: number | null = null;
+      let driverRequests: any[] = [];
+      let localOrdersFallback: any[] = [];
 
       if (user?.rol === 'driver') {
         if (hasEnv) {
@@ -81,6 +83,22 @@ export default function WorkOrders() {
           if (empleado) {
             empleadoId = empleado.id_empleado;
             ordersQuery = ordersQuery.eq('empleado_id', empleado.id_empleado);
+
+            const { data: solicitudesData } = await supabase
+              .from('solicitud_diagnostico')
+              .select(`
+                *,
+                empleado:empleado_id(usuario_id, nombre, apellido_paterno, apellido_materno),
+                vehiculo:vehiculo_id(
+                  patente_vehiculo,
+                  modelo:modelo_vehiculo_id(nombre_modelo)
+                )
+              `)
+              .eq('empleado_id', empleado.id_empleado)
+              .in('estado_solicitud', ['pendiente_confirmacion', 'confirmada'])
+              .order('created_at', { ascending: false });
+
+            driverRequests = solicitudesData || [];
           }
         } else {
           const empleados = readLocal('apt_empleados', []);
@@ -88,6 +106,12 @@ export default function WorkOrders() {
           if (empleado) {
             empleadoId = empleado.id_empleado;
           }
+
+          driverRequests = readLocal('apt_solicitudes_diagnostico', []).filter(
+            (s: any) =>
+              s.empleado_id === empleadoId ||
+              empleados.some((e: any) => e.id_empleado === s.empleado_id && e.usuario_id === user.id_usuario)
+          );
         }
       }
 
@@ -104,34 +128,12 @@ export default function WorkOrders() {
 
       // Si es chofer, agregar solicitudes pendientes como "órdenes" virtuales
       if (user?.rol === 'driver') {
-        const solicitudes = readLocal('apt_solicitudes_diagnostico', []);
-        const empleados = readLocal('apt_empleados', []);
-        
-        // Buscar todas las solicitudes del chofer, verificando por empleado_id o por usuario_id del empleado
-        const solicitudesDelChofer = solicitudes.filter((s: any) => {
-          // Verificar si el empleado_id coincide
-          if (empleadoId && s.empleado_id === empleadoId) {
-            return s.estado_solicitud === 'pendiente_confirmacion' || s.estado_solicitud === 'confirmada';
-          }
-          
-          // Si no coincide, buscar el empleado por usuario_id para verificar
-          const empleadoSolicitud = empleados.find((e: any) => e.id_empleado === s.empleado_id);
-          if (empleadoSolicitud && empleadoSolicitud.usuario_id === user.id_usuario) {
-            return s.estado_solicitud === 'pendiente_confirmacion' || s.estado_solicitud === 'confirmada';
-          }
-          
-          // También verificar si el empleadoId actual coincide con algún empleado que tenga este usuario_id
-          const empleadoActual = empleados.find((e: any) => e.usuario_id === user.id_usuario);
-          if (empleadoActual && s.empleado_id === empleadoActual.id_empleado) {
-            return s.estado_solicitud === 'pendiente_confirmacion' || s.estado_solicitud === 'confirmada';
-          }
-          
-          return false;
-        });
-
-        console.log('📋 Solicitudes encontradas para el chofer:', solicitudesDelChofer.length);
-        console.log('👤 Empleado ID actual:', empleadoId);
-        console.log('📝 Todas las solicitudes:', solicitudes);
+        const solicitudesFuente = driverRequests.length > 0 ? driverRequests : [];
+        const solicitudesDelChofer = solicitudesFuente.filter(
+          (s: any) =>
+            (empleadoId && s.empleado_id === empleadoId) ||
+            s.empleado?.usuario_id === user?.id_usuario
+        );
 
         // Convertir solicitudes a formato de orden virtual
         const ordenesVirtuales = solicitudesDelChofer.map((solicitud: any) => {
@@ -144,7 +146,7 @@ export default function WorkOrders() {
             id_orden_trabajo: ordenId,
             fecha_inicio_ot: solicitud.fecha_confirmada || solicitud.fecha_solicitada,
             fecha_cierre_ot: null,
-            descripcion_ot: `Diagnóstico - ${solicitud.tipo_problema}`,
+            descripcion_ot: `Diagnóstico - ${solicitud.tipo_problema || solicitud.descripcion_problema || 'Sin detalle'}`,
             estado_ot: solicitud.estado_solicitud === 'pendiente_confirmacion' 
               ? 'pendiente_confirmacion' 
               : 'en_diagnostico_programado',
@@ -155,10 +157,11 @@ export default function WorkOrders() {
             hora_confirmada: solicitud.fecha_confirmada && solicitud.bloque_horario_confirmado
               ? `${solicitud.fecha_confirmada} ${solicitud.bloque_horario_confirmado}`
               : `${solicitud.fecha_solicitada} ${solicitud.bloque_horario}`,
-            patente_vehiculo: solicitud.patente_vehiculo,
-            tipo_problema: solicitud.tipo_problema,
+            patente_vehiculo: solicitud.patente_vehiculo || solicitud.vehiculo?.patente_vehiculo,
+            tipo_problema: solicitud.tipo_problema || solicitud.motivo_consulta,
             bloque_horario: solicitud.bloque_horario_confirmado || solicitud.bloque_horario,
             estado_solicitud: solicitud.estado_solicitud,
+            vehiculo: solicitud.vehiculo || null,
           };
         });
 
@@ -168,6 +171,7 @@ export default function WorkOrders() {
       // Cargar también desde localStorage (siempre para coordinadores, o si no hay BD)
       if (!hasEnv || user?.rol === 'planner') {
         const localOrders = readLocal('apt_ordenes_trabajo', []);
+        localOrdersFallback = localOrders;
         console.log('📦 Órdenes en localStorage:', localOrders.length);
         
         const localFiltered = localOrders.filter((order: any) => {
@@ -248,7 +252,7 @@ export default function WorkOrders() {
 
       setAllWorkOrders(uniqueOrders);
       if (user?.rol === 'driver') {
-        setDriverHistory(buildDriverHistory(uniqueOrders));
+        setDriverHistory(buildDriverHistory(uniqueOrders, driverRequests, localOrdersFallback));
       } else {
         setDriverHistory([]);
       }
@@ -628,9 +632,9 @@ export default function WorkOrders() {
     });
   }
 
-  function buildDriverHistory(orders: any[]): any[] {
-    const solicitudesLS = readLocal('apt_solicitudes_diagnostico', []);
-    const ordenesLS = readLocal('apt_ordenes_trabajo', []);
+  function buildDriverHistory(orders: any[], solicitudesFuente: any[], ordenesFallback: any[]): any[] {
+    const solicitudesLS = Array.isArray(solicitudesFuente) ? solicitudesFuente : [];
+    const ordenesLS = Array.isArray(ordenesFallback) ? ordenesFallback : [];
 
     const history = orders.map((orden: any) => {
       const solicitud = Array.isArray(solicitudesLS)
@@ -681,10 +685,26 @@ export default function WorkOrders() {
         orden.bloque_horario ||
         null;
 
+      const patente =
+        orden.patente_vehiculo ||
+        solicitud?.patente_vehiculo ||
+        solicitud?.vehiculo?.patente_vehiculo ||
+        ordenLocal?.patente_vehiculo ||
+        'Sin patente';
+
+      const problema =
+        orden.tipo_problema ||
+        solicitud?.tipo_problema ||
+        solicitud?.descripcion_problema ||
+        solicitud?.motivo_consulta ||
+        ordenLocal?.tipo_problema ||
+        orden.descripcion_ot ||
+        'Diagnóstico solicitado';
+
       return {
         id: orden.id_orden_trabajo,
-        patente: orden.patente_vehiculo || solicitud?.patente_vehiculo || ordenLocal?.patente_vehiculo || 'N/A',
-        problema: orden.tipo_problema || solicitud?.tipo_problema || ordenLocal?.tipo_problema || orden.descripcion_ot || 'N/A',
+        patente,
+        problema,
         fecha: fechaReferencia,
         fechaFormateada: fechaReferencia ? formatDate(fechaReferencia) : 'N/A',
         hora: formatHour(typeof rawHora === 'string' ? rawHora : null),

@@ -28,8 +28,8 @@ export default function Login() {
 
   return (
     <div className="min-h-screen bg-slate-100 flex items-center justify-center px-4 py-10">
-      <div className="w-full max-w-5xl bg-white shadow-2xl rounded-3xl overflow-hidden flex flex-col md:flex-row">
-        <div className="relative md:w-1/2 bg-gradient-to-br from-blue-900 via-blue-800 to-blue-600 text-white px-10 py-12 flex flex-col gap-10">
+      <div className="w-full max-w-5xl bg-white shadow-2xl rounded-3xl overflow-hidden flex flex-col-reverse md:flex-row">
+        <div className="relative hidden md:flex md:w-1/2 bg-gradient-to-br from-blue-900 via-blue-800 to-blue-600 text-white px-10 py-12 flex-col gap-10">
           <div className="flex items-center gap-3">
             <div className="bg-white/10 rounded-full p-3">
               <Truck size={36} className="text-white" />
@@ -58,7 +58,22 @@ export default function Login() {
           </div>
         </div>
 
-        <div className="w-full md:w-1/2 px-8 sm:px-12 py-10 sm:py-12">
+        <div className="w-full md:w-1/2 px-6 sm:px-10 py-8 sm:py-12">
+          <div className="md:hidden mb-8">
+            <div className="flex items-center gap-3">
+              <div className="bg-blue-50 rounded-full p-2">
+                <Truck size={28} className="text-blue-600" />
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-[0.3em] text-blue-600/70">Sistema</p>
+                <h2 className="text-xl font-semibold text-slate-900">Gestión Taller PepsiCo</h2>
+              </div>
+            </div>
+            <p className="mt-4 text-sm text-slate-500">
+              Administra vehículos, agenda mantenimientos y gestiona tu taller en un solo lugar.
+            </p>
+          </div>
+
           <div className="mb-8">
             <p className="text-sm uppercase tracking-[0.3em] text-blue-600 font-semibold">Acceso seguro</p>
             <h2 className="text-3xl font-bold text-slate-900 mt-2">Inicia sesión en tu cuenta</h2>

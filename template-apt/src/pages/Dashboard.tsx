@@ -262,15 +262,27 @@ export default function Dashboard() {
         citaGuardada?.bloque_horario ||
         null;
 
+      const patente =
+        orden.patente_vehiculo ||
+        solicitud?.patente_vehiculo ||
+        solicitud?.vehiculo?.patente_vehiculo ||
+        ordenLocal?.patente_vehiculo ||
+        citaGuardada?.patente ||
+        'Sin patente';
+
+      const problema =
+        orden.tipo_problema ||
+        solicitud?.tipo_problema ||
+        solicitud?.descripcion_problema ||
+        solicitud?.motivo_consulta ||
+        ordenLocal?.tipo_problema ||
+        orden.descripcion_ot ||
+        'Diagnóstico solicitado';
+
       return {
         id: orden.id_orden_trabajo,
-        patente: orden.patente_vehiculo || solicitud?.patente_vehiculo || ordenLocal?.patente_vehiculo || 'N/A',
-        problema:
-          orden.tipo_problema ||
-          solicitud?.tipo_problema ||
-          ordenLocal?.tipo_problema ||
-          orden.descripcion_ot ||
-          'N/A',
+        patente,
+        problema,
         fecha: fechaReferencia,
         fechaFormateada: fechaReferencia ? formatDate(fechaReferencia) : 'N/A',
         hora: formatHour(typeof rawHora === 'string' ? rawHora : null),
@@ -306,11 +318,22 @@ export default function Dashboard() {
             ? 'bg-blue-100 text-blue-700 border border-blue-200'
             : 'bg-gray-100 text-gray-500 border border-gray-200';
 
+        const patente =
+          solicitud.patente_vehiculo ||
+          solicitud.vehiculo?.patente_vehiculo ||
+          'Sin patente';
+
+        const problema =
+          solicitud.tipo_problema ||
+          solicitud.descripcion_problema ||
+          solicitud.motivo_consulta ||
+          'Diagnóstico solicitado';
+
         return {
           id: solicitud.id_solicitud_diagnostico || solicitud.id,
           solicitud_diagnostico_id: solicitud.id_solicitud_diagnostico || null,
-          patente: solicitud.patente_vehiculo || 'N/A',
-          problema: solicitud.tipo_problema || 'N/A',
+          patente,
+          problema,
           fecha: normalizeDate(solicitud.fecha_confirmada || solicitud.fecha_solicitada || solicitud.created_at),
           fechaFormateada: formatDate(solicitud.fecha_confirmada || solicitud.fecha_solicitada || solicitud.created_at),
           hora: formatHour(solicitud.bloque_horario_confirmado || solicitud.bloque_horario),
