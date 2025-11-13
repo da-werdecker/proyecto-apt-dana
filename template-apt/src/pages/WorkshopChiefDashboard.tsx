@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Calendar, Clock, Truck, User, AlertCircle, CheckCircle, FileText, Wrench, Settings, ClipboardList, Activity } from 'lucide-react';
+import { Calendar, Clock, Truck, User, AlertCircle, CheckCircle, FileText, Wrench, Settings, ClipboardList, Activity, AlertTriangle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import Modal from '../components/Modal';
@@ -27,6 +27,7 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
   const [selectedOT, setSelectedOT] = useState<any | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [showChecklist, setShowChecklist] = useState(false);
+  const [checklistReadOnly, setChecklistReadOnly] = useState(false);
   const [viewOnlyModal, setViewOnlyModal] = useState(false);
   const [selectedDiagnostico, setSelectedDiagnostico] = useState<any | null>(null);
   const [mechanics, setMechanics] = useState<any[]>([]);
@@ -36,18 +37,74 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
   const [progressDetailModal, setProgressDetailModal] = useState(false);
   const [cierreTab, setCierreTab] = useState<'pendientes' | 'finalizadas'>('pendientes');
   const [ordenesFinalizadas, setOrdenesFinalizadas] = useState<any[]>([]);
+  const [modalReadOnly, setModalReadOnly] = useState(false);
+  const [closingOtId, setClosingOtId] = useState<number | null>(null);
   
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{
+    prioridad_ot: string;
+    checklist_id: string;
+    mecanico_principal_id: number | null;
+    mecanico_nombre: string | null;
+    mecanico_apoyo_ids: number[];
+    confirmado_ingreso: boolean;
+    estado_ot: string;
+  }>({
     prioridad_ot: 'normal',
     checklist_id: '',
-    mecanico_apoyo_ids: [] as number[],
+    mecanico_principal_id: null,
+    mecanico_nombre: null,
+    mecanico_apoyo_ids: [],
     confirmado_ingreso: false,
     estado_ot: 'en_reparacion',
   });
 
   const hasEnv = Boolean(import.meta.env.VITE_SUPABASE_URL) && Boolean(import.meta.env.VITE_SUPABASE_ANON_KEY);
 
+  const getMechanicName = (mechanic: any) => {
+    const nombre = [
+      mechanic?.nombre || '',
+      mechanic?.apellido_paterno || '',
+      mechanic?.apellido_materno || '',
+    ]
+      .join(' ')
+      .trim();
+    return nombre || `Mecánico #${mechanic?.id_empleado ?? 'N/A'}`;
+  };
+
+  const mechanicOptions = useMemo(
+    () =>
+      mechanics.map((mechanic) => ({
+        id: mechanic.id_empleado,
+        label: getMechanicName(mechanic),
+      })),
+    [mechanics],
+  );
+
+  const toggleSupportMechanic = (mechanicId: number) => {
+    setFormData((prev) => {
+      const principalId = prev.mecanico_principal_id ?? null;
+      if (principalId === mechanicId) {
+        return prev;
+      }
+
+      const supportSet = new Set(prev.mecanico_apoyo_ids || []);
+      if (supportSet.has(mechanicId)) {
+        supportSet.delete(mechanicId);
+      } else {
+        supportSet.add(mechanicId);
+      }
+
+      return {
+        ...prev,
+        mecanico_apoyo_ids: Array.from(supportSet),
+      };
+    });
+  };
+
   const readLocal = (key: string, fallback: any) => {
+    if (hasEnv) {
+      return fallback;
+    }
     try {
       const raw = localStorage.getItem(key);
       return raw ? JSON.parse(raw) : fallback;
@@ -57,6 +114,9 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
   };
 
   const writeLocal = (key: string, value: any) => {
+    if (hasEnv) {
+      return true;
+    }
     try {
       localStorage.setItem(key, JSON.stringify(value));
       return true;
@@ -199,56 +259,90 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
             );
 
           if (!ordenesError && Array.isArray(ordenesDb)) {
-            ordenes = ordenesDb.map((orden: any) => {
-              const solicitud = orden.solicitud || null;
-              return {
-                id_orden_trabajo: orden.id_orden_trabajo,
-                descripcion_ot: orden.descripcion_ot,
-                estado_ot: orden.estado_ot,
-                prioridad_ot: orden.prioridad_ot,
-                empleado_id: orden.empleado_id,
-                vehiculo_id: orden.vehiculo_id,
-                solicitud_diagnostico_id: orden.solicitud_diagnostico_id || solicitud?.id_solicitud_diagnostico || null,
-                checklist_id: orden.checklist_id,
-                mecanico_apoyo_ids: orden.mecanico_apoyo_ids,
-                confirmado_ingreso: orden.confirmado_ingreso,
-                hora_confirmada: orden.hora_confirmada,
-                fecha_inicio_ot: orden.fecha_inicio_ot,
-                fecha_cierre_ot: orden.fecha_cierre_ot,
-              estado_cierre: orden.estado_cierre || 'pendiente',
-              fecha_cierre_tecnico: orden.fecha_cierre_tecnico || null,
-              detalle_reparacion: orden.detalle_reparacion || null,
-                created_at: orden.created_at,
-                patente_vehiculo: orden.vehiculo?.patente_vehiculo || solicitud?.patente_vehiculo || null,
-              avances: Array.isArray(orden.avances)
-                ? orden.avances
-                    .map((avance: any) => ({
-                      ...avance,
-                      fecha_registro: avance.created_at,
-                    }))
-                    .sort(
-                      (a: any, b: any) =>
-                        new Date(b.created_at || b.fecha_registro || 0).getTime() -
-                        new Date(a.created_at || a.fecha_registro || 0).getTime()
-                    )
-                : [],
-                solicitud_detalle: solicitud
-                  ? {
-                      fecha_confirmada: solicitud.fecha_confirmada,
-                      fecha_solicitada: solicitud.fecha_solicitada,
-                      bloque_horario_confirmado: solicitud.bloque_horario_confirmado,
-                      bloque_horario: solicitud.bloque_horario,
-                      tipo_problema: solicitud.tipo_problema,
-                      prioridad: solicitud.prioridad,
-                      estado_solicitud: solicitud.estado_solicitud,
-                      tipo_trabajo: solicitud.tipo_trabajo,
-                      mecanico_id: solicitud.mecanico_id,
+            const ordenesIds = ordenesDb.map((o: any) => o.id_orden_trabajo).filter(Boolean);
+            const avancesMap = new Map<number, any[]>();
+            const aprobacionesMap = new Map<number, any>();
+
+            if (ordenesIds.length > 0) {
+              try {
+                const { data: avancesDb, error: avancesError } = await supabase
+                  .from('avance_ot')
+                  .select(
+                    `
+                      id_avance_ot,
+                      orden_trabajo_id,
+                      descripcion_trabajo,
+                      observaciones,
+                      hora_inicio,
+                      hora_fin,
+                      fotos,
+                      mecanico_id,
+                      created_at,
+                      estado_ot
+                    `
+                  )
+                  .in('orden_trabajo_id', ordenesIds)
+                  .order('created_at', { ascending: false });
+
+                if (avancesError) {
+                  console.error('⚠️ Error cargando avances de Supabase:', avancesError);
+                } else if (Array.isArray(avancesDb)) {
+                  avancesDb.forEach((avance: any) => {
+                    const list = avancesMap.get(avance.orden_trabajo_id) || [];
+                    list.push(avance);
+                    avancesMap.set(avance.orden_trabajo_id, list);
+                  });
+                }
+              } catch (avancesCatch) {
+                console.error('⚠️ Error inesperado al cargar avances:', avancesCatch);
+              }
+
+              try {
+                const { data: aprobacionesDb, error: aprobacionesError } = await supabase
+                  .from('aprobacion_asignacion_ot')
+                  .select(
+                    `
+                      id_aprobacion,
+                      orden_trabajo_id,
+                      mecanico_id,
+                      estado,
+                      updated_at,
+                      created_at
+                    `
+                  )
+                  .in('orden_trabajo_id', ordenesIds)
+                  .order('updated_at', { ascending: false, nullsLast: true })
+                  .order('created_at', { ascending: false, nullsLast: true });
+
+                if (aprobacionesError) {
+                  console.error('⚠️ Error cargando aprobaciones de asignación:', aprobacionesError);
+                } else if (Array.isArray(aprobacionesDb)) {
+                  aprobacionesDb.forEach((row: any) => {
+                    const current = aprobacionesMap.get(row.orden_trabajo_id);
+                    if (!current) {
+                      aprobacionesMap.set(row.orden_trabajo_id, row);
                     }
-                  : null,
+                  });
+                }
+              } catch (aprobacionesCatch) {
+                console.error('⚠️ Error inesperado al cargar aprobaciones:', aprobacionesCatch);
+              }
+            }
+
+            ordenes = ordenesDb.map((o: any) => {
+              const avances =
+                Array.isArray(o.avances) && o.avances.length > 0 ? o.avances : avancesMap.get(o.id_orden_trabajo) || [];
+              const aprobacion = aprobacionesMap.get(o.id_orden_trabajo) || null;
+
+              return {
+                ...o,
+                avances,
+                asignacion_estado: aprobacion?.estado || null,
+                asignacion_mecanico_id: aprobacion?.mecanico_id || null,
+                asignacion_actualizada_en: aprobacion?.updated_at || aprobacion?.created_at || null,
               };
             });
             writeLocal('apt_ordenes_trabajo', ordenes);
-            ordenesActualizadas = [...ordenes];
           }
 
           const { data: empleadosDb } = await supabase
@@ -268,25 +362,11 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
             );
 
           if (Array.isArray(empleadosDb)) {
-            const mapa = new Map<number, any>();
-            empleadosData.forEach((emp: any) => {
-              if (emp?.id_empleado) {
-                mapa.set(emp.id_empleado, emp);
-              }
-            });
-
-            empleadosDb.forEach((emp: any) => {
-              mapa.set(emp.id_empleado, {
-                ...mapa.get(emp.id_empleado),
-                ...emp,
-                cargo_nombre:
-                  emp.cargo?.nombre_cargo || mapa.get(emp.id_empleado)?.cargo_nombre || null,
-                rol: emp.usuario?.rol || mapa.get(emp.id_empleado)?.rol || null,
-              });
-            });
-
-            empleadosData = Array.from(mapa.values());
-            writeLocal('apt_empleados', empleadosData);
+            empleadosData = empleadosDb.map((emp: any) => ({
+              ...emp,
+              cargo_nombre: emp.cargo?.nombre_cargo || null,
+              rol: emp.usuario?.rol || null,
+            }));
           }
         } catch (error) {
           console.error('⚠️ Error cargando datos desde Supabase:', error);
@@ -307,16 +387,20 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
       
       // Enriquecer órdenes con información de solicitudes
       const ordenesEnriquecidas = ordenesDiagnosticoFiltered.map((orden: any) => {
-        const solicitud = solicitudes.find((s: any) => 
+        const solicitud = solicitudes.find((s: any) =>
           s.orden_trabajo_id === orden.id_orden_trabajo ||
           s.id_solicitud_diagnostico === orden.solicitud_diagnostico_id
         );
-        const empleado = empleadosData.find((e: any) => e.id_empleado === orden.empleado_id);
-        
-        const choferNombre = solicitud?.nombre_operador ||
+        const mecanico = empleadosData.find((e: any) => e.id_empleado === orden.empleado_id);
+        const choferEmpleado = empleadosData.find((e: any) => e.id_empleado === solicitud?.empleado_id);
+
+        const choferNombre =
+          solicitud?.nombre_operador ||
           solicitud?.nombre_chofer ||
           solicitud?.chofer_nombre ||
-          (empleado ? `${empleado.nombre} ${empleado.apellido_paterno}` : null);
+          (choferEmpleado
+            ? `${choferEmpleado.nombre} ${choferEmpleado.apellido_paterno || ''}`.trim()
+            : null);
         
         // Verificar si el vehículo ya ingresó (buscando en historial de autorizados y registros de ingreso)
         const patenteNormalizada = solicitud?.patente_vehiculo?.toUpperCase();
@@ -380,6 +464,14 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
           estado_ot: estadoFinal,
           solicitud: solicitud,
           empleado_nombre: choferNombre || 'N/A',
+          mecanico_nombre: mecanico
+            ? `${mecanico.nombre} ${mecanico.apellido_paterno || ''}`.trim()
+            : null,
+          asignacion_estado: orden.asignacion_estado
+            ? String(orden.asignacion_estado).toLowerCase()
+            : null,
+          asignacion_mecanico_id: orden.asignacion_mecanico_id || null,
+          asignacion_actualizada_en: orden.asignacion_actualizada_en || null,
           patente_vehiculo: solicitud?.patente_vehiculo || 'N/A',
           tipo_problema: solicitud?.tipo_problema || 'Diagnóstico',
           fecha_confirmada: solicitud?.fecha_confirmada || orden.fecha_inicio_ot,
@@ -495,7 +587,8 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
               const cargoNombre = m.cargo?.nombre_cargo?.toLowerCase?.() || '';
               const rol = (m.usuario?.rol || '').toLowerCase();
               const estado = (m.estado_empleado || '').toLowerCase();
-              return estado !== 'inactivo' && (rol === 'mechanic' || cargoNombre.includes('mec'));
+              if (estado === 'inactivo') return false;
+              return rol === 'mechanic' || cargoNombre.includes('mec');
             });
           }
         } catch (error) {
@@ -567,14 +660,31 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
 
   const handleOpenOT = (orden: any) => {
     setSelectedOT(orden);
+    setModalReadOnly(activeSection === 'cierre');
     
     // Buscar si existe un checklist guardado para esta OT
     const checklistExistente = checklists.find((c: any) => c.orden_trabajo_id === orden.id_orden_trabajo);
     
+    const principalId =
+      orden.solicitud?.mecanico_id ||
+      orden.solicitud_detalle?.mecanico_id ||
+      orden.empleado_id ||
+      null;
+    const principalMechanic = mechanics.find((m: any) => m.id_empleado === principalId) || null;
+    const apoyos = Array.isArray(orden.mecanico_apoyo_ids)
+      ? (orden.mecanico_apoyo_ids as number[]).filter(
+          (id) => typeof id === 'number' && id && id !== principalId,
+        )
+      : [];
+
     setFormData({
       prioridad_ot: orden.prioridad_ot || 'normal',
       checklist_id: checklistExistente ? checklistExistente.id.toString() : (orden.checklist_id || ''),
-      mecanico_apoyo_ids: orden.mecanico_apoyo_ids || [],
+      mecanico_principal_id: principalId ?? null,
+      mecanico_nombre:
+        orden.mecanico_nombre ||
+        (principalMechanic ? getMechanicName(principalMechanic) : null),
+      mecanico_apoyo_ids: apoyos,
       confirmado_ingreso: orden.ya_ingreso || false,
       estado_ot: orden.estado_ot || 'en_reparacion',
     });
@@ -662,55 +772,65 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
   };
 
   const handleSaveOT = async () => {
-    if (!selectedOT) return;
+    if (!selectedOT || modalReadOnly) return;
+
+    if (!formData.mecanico_principal_id) {
+      alert('Debes seleccionar un mecánico principal antes de guardar la orden de trabajo.');
+      return;
+    }
+
+    if (mechanicOptions.length === 0) {
+      alert('No hay mecánicos registrados. Registra al menos uno para poder asignarlo.');
+      return;
+    }
+
+    if (!hasEnv) {
+      alert('Configura Supabase para poder guardar la orden de trabajo.');
+      return;
+    }
 
     try {
-      const ordenes = readLocal('apt_ordenes_trabajo', []);
-      const ordenIndex = ordenes.findIndex((o: any) => 
-        o.id_orden_trabajo === selectedOT.id_orden_trabajo
-      );
+      const principalId = formData.mecanico_principal_id;
+      const estadoOriginal = (selectedOT.estado_ot || '').toLowerCase();
+      const estadoActualizado =
+        formData.confirmado_ingreso && estadoOriginal === 'en_diagnostico_programado'
+          ? 'en curso'
+          : selectedOT.estado_ot || 'en_diagnostico_programado';
 
-      if (ordenIndex !== -1) {
-        const estadoActualizado =
-          formData.confirmado_ingreso && ordenes[ordenIndex].estado_ot === 'en_diagnostico_programado'
-            ? 'en curso'
-            : ordenes[ordenIndex].estado_ot;
-
-        ordenes[ordenIndex] = {
-          ...ordenes[ordenIndex],
+      const { error: updateError } = await supabase
+        .from('orden_trabajo')
+        .update({
           prioridad_ot: formData.prioridad_ot,
           checklist_id: formData.checklist_id ? Number(formData.checklist_id) : null,
-          mecanico_apoyo_ids: formData.mecanico_apoyo_ids,
           confirmado_ingreso: formData.confirmado_ingreso,
           estado_ot: estadoActualizado,
-        };
-        
-        writeLocal('apt_ordenes_trabajo', ordenes);
-        
-        // También actualizar en Supabase si está configurado
-        if (hasEnv) {
-          try {
-            await supabase
-              .from('orden_trabajo')
-              .update({
-                prioridad_ot: formData.prioridad_ot,
-                checklist_id: formData.checklist_id ? Number(formData.checklist_id) : null,
-                mecanico_apoyo_ids: formData.mecanico_apoyo_ids,
-                confirmado_ingreso: formData.confirmado_ingreso,
-                estado_ot: estadoActualizado,
-              })
-              .eq('id_orden_trabajo', selectedOT.id_orden_trabajo);
+          empleado_id: principalId,
+          mecanico_apoyo_ids: [],
+        })
+        .eq('id_orden_trabajo', selectedOT.id_orden_trabajo);
 
-            await syncAssignmentApprovals(selectedOT.id_orden_trabajo, formData.mecanico_apoyo_ids || []);
-          } catch (error) {
-            console.error('Error actualizando en Supabase:', error);
-          }
-        }
-        
-        alert('✅ Orden de trabajo actualizada exitosamente');
-        setModalOpen(false);
-        loadData();
+      if (updateError) {
+        throw updateError;
       }
+
+      const solicitudId =
+        selectedOT.solicitud?.id_solicitud_diagnostico || selectedOT.solicitud_diagnostico_id || null;
+      if (solicitudId) {
+        const { error: solicitudError } = await supabase
+          .from('solicitud_diagnostico')
+          .update({ mecanico_id: principalId })
+          .eq('id_solicitud_diagnostico', solicitudId);
+
+        if (solicitudError) {
+          console.warn('⚠️ No se pudo actualizar la solicitud asociada:', solicitudError);
+        }
+      }
+
+      await syncAssignmentApprovals(selectedOT.id_orden_trabajo, [principalId]);
+
+      alert('✅ Orden de trabajo actualizada exitosamente');
+      setModalOpen(false);
+      loadData();
     } catch (error) {
       console.error('Error saving OT:', error);
       alert('Error al guardar la orden de trabajo');
@@ -718,6 +838,7 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
   };
 
   const handleOpenChecklist = () => {
+    setChecklistReadOnly(modalReadOnly);
     // Cerrar el modal de gestión antes de abrir el checklist
     setModalOpen(false);
     setShowChecklist(true);
@@ -726,161 +847,68 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
   const handleSaveChecklist = async (checklistData: any) => {
     if (!selectedOT) return;
 
+    if (!hasEnv) {
+      alert('No es posible guardar el checklist sin conexión a la base de datos.');
+      return;
+    }
+
     try {
-      // Guardar el checklist
-      const checklistsLS = readLocal('apt_checklists_diagnostico', []);
-      let checklistId: number;
-      
-      // Si ya existe un checklist para esta OT, actualizarlo; si no, crear uno nuevo
-      const existingChecklistIndex = checklistsLS.findIndex((c: any) => 
-        c.orden_trabajo_id === selectedOT.id_orden_trabajo
-      );
-      
-      const checklistCompleto = {
-        id: existingChecklistIndex !== -1 ? checklistsLS[existingChecklistIndex].id : Date.now(),
+      const payload = {
         orden_trabajo_id: selectedOT.id_orden_trabajo,
-        fecha_creacion: existingChecklistIndex !== -1 
-          ? checklistsLS[existingChecklistIndex].fecha_creacion 
-          : new Date().toISOString(),
-        fecha_actualizacion: new Date().toISOString(),
-        ...checklistData,
+        empleado_id: formData.mecanico_principal_id ?? null,
+        datos: checklistData,
+        clasificacion_prioridad: checklistData.clasificacion_prioridad || null,
+        estado: checklistData.estado || 'completado',
       };
-      
-      if (existingChecklistIndex !== -1) {
-        // Actualizar checklist existente
-        checklistsLS[existingChecklistIndex] = checklistCompleto;
-        checklistId = checklistCompleto.id;
-      } else {
-        // Crear nuevo checklist
-        checklistsLS.push(checklistCompleto);
-        checklistId = checklistCompleto.id;
+
+      const { data: upserted, error: checklistError } = await supabase
+        .from('checklist_diagnostico')
+        .upsert(payload, { onConflict: 'orden_trabajo_id' })
+        .select()
+        .single();
+
+      if (checklistError) {
+        throw checklistError;
       }
 
-      // Guardar en Supabase si está disponible
-      if (hasEnv) {
-        try {
-          const payload: any = {
-            orden_trabajo_id: selectedOT.id_orden_trabajo,
-            empleado_id:
-              formData.mecanico_apoyo_ids && formData.mecanico_apoyo_ids.length > 0
-                ? formData.mecanico_apoyo_ids[0]
-                : null,
-            datos: checklistCompleto,
-            clasificacion_prioridad: checklistData.clasificacion_prioridad || null,
-            estado: 'completado',
-          };
+      if (upserted) {
+        setChecklists((prev) => {
+          const filtered = prev.filter((c: any) => c.orden_trabajo_id !== selectedOT.id_orden_trabajo);
+          return [
+            ...filtered,
+            {
+              ...upserted,
+              id: upserted.id_checklist,
+            },
+          ];
+        });
 
-          if (existingChecklistIndex !== -1) {
-            const existing = checklistsLS[existingChecklistIndex];
-            if (existing?.id) {
-              payload.id_checklist = existing.id;
-            }
-          }
+        setFormData((prev) => ({
+          ...prev,
+          checklist_id: upserted.id_checklist ? String(upserted.id_checklist) : prev.checklist_id,
+          prioridad_ot: checklistData.clasificacion_prioridad || prev.prioridad_ot,
+        }));
 
-          const { data: upserted, error: checklistError } = await supabase
-            .from('checklist_diagnostico')
-            .upsert(payload, { onConflict: 'orden_trabajo_id' })
-            .select()
-            .single();
+        await supabase
+          .from('orden_trabajo')
+          .update({
+            checklist_id: upserted.id_checklist,
+            prioridad_ot: checklistData.clasificacion_prioridad || selectedOT.prioridad_ot,
+          })
+          .eq('id_orden_trabajo', selectedOT.id_orden_trabajo);
+      }
 
-          if (checklistError) {
-            console.error('Error guardando checklist en Supabase:', checklistError);
-          } else if (upserted) {
-            checklistId = upserted.id_checklist;
-            checklistCompleto.id = upserted.id_checklist;
-            checklistCompleto.fecha_creacion = upserted.created_at;
-            checklistCompleto.fecha_actualizacion = upserted.updated_at;
-            if (formData.mecanico_apoyo_ids.length === 0 && upserted.empleado_id) {
-              setFormData((prev) => ({
-                ...prev,
-                mecanico_apoyo_ids: [...prev.mecanico_apoyo_ids, upserted.empleado_id],
-              }));
-            }
-          }
-        } catch (error) {
-          console.error('⚠️ Error sincronizando checklist en Supabase:', error);
-        }
-      }
-      
-      if (existingChecklistIndex !== -1) {
-        checklistsLS[existingChecklistIndex] = checklistCompleto;
-      } else {
-        checklistsLS[checklistsLS.length - 1] = checklistCompleto;
-      }
-      writeLocal('apt_checklists_diagnostico', checklistsLS);
-      setChecklists((prev) => {
-        const filtered = prev.filter((c: any) => c.orden_trabajo_id !== selectedOT.id_orden_trabajo);
-        return [
-          ...filtered,
-          {
-            ...checklistCompleto,
-            id: checklistId,
-          },
-        ];
-      });
-      
-      // Actualizar la OT con el checklist_id
-      const ordenes = readLocal('apt_ordenes_trabajo', []);
-      const ordenIndex = ordenes.findIndex((o: any) => 
-        o.id_orden_trabajo === selectedOT.id_orden_trabajo
-      );
-      
-      if (ordenIndex !== -1) {
-        // Si el checklist tiene clasificación de prioridad, cambiar estado a "en_reparacion"
-        const nuevoEstado = checklistData.clasificacion_prioridad ? 'en_reparacion' : ordenes[ordenIndex].estado_ot;
-        
-        ordenes[ordenIndex] = {
-          ...ordenes[ordenIndex],
-          checklist_id: checklistId,
-          // Actualizar prioridad si viene del checklist
-          prioridad_ot: checklistData.clasificacion_prioridad || ordenes[ordenIndex].prioridad_ot,
-          // Cambiar estado a "en_reparacion" si el checklist está completo
-          estado_ot: nuevoEstado,
-        };
-        writeLocal('apt_ordenes_trabajo', ordenes);
-        
-        console.log(`✅ OT #${selectedOT.id_orden_trabajo} cambiada a estado: ${nuevoEstado}`);
-        
-        // Actualizar en Supabase si está configurado
-        if (hasEnv) {
-          try {
-            await supabase
-              .from('orden_trabajo')
-              .update({
-                checklist_id: checklistId,
-                prioridad_ot: checklistData.clasificacion_prioridad || selectedOT.prioridad_ot,
-                estado_ot: nuevoEstado,
-              })
-              .eq('id_orden_trabajo', selectedOT.id_orden_trabajo);
-          } catch (error) {
-            console.error('Error actualizando en Supabase:', error);
-          }
-        }
-      }
-      
-      setFormData({
-        ...formData,
-        checklist_id: checklistId.toString(),
-        prioridad_ot: checklistData.clasificacion_prioridad || formData.prioridad_ot,
-      });
-      
-      const mensajeExito = checklistData.clasificacion_prioridad 
-        ? '✅ Checklist guardado exitosamente. La OT ha pasado a estado "En Reparación".'
-        : '✅ Checklist guardado exitosamente.';
-      
-      alert(mensajeExito);
       setShowChecklist(false);
-      // Reabrir el modal de gestión después de guardar el checklist
-      setModalOpen(true);
-      loadData();
+      alert('Checklist guardado exitosamente.');
     } catch (error) {
-      console.error('Error saving checklist:', error);
-      alert('Error al guardar el checklist');
+      console.error('Error guardando checklist:', error);
+      alert('No se pudo guardar el checklist de diagnóstico.');
     }
   };
 
   const handleCancelChecklist = () => {
     setShowChecklist(false);
+    setChecklistReadOnly(false);
     // Reabrir el modal de gestión después de cerrar el checklist
     if (selectedOT) {
       setModalOpen(true);
@@ -978,6 +1006,14 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
   const ordenesPendientesChecklist = checklistAggregation.ordenesPendientes;
   const ordenesRealizadasChecklist = checklistAggregation.ordenesRealizadas;
 
+  const getAvanceTimestamp = (avance: any) => {
+    if (!avance) return null;
+    const raw = avance.fecha_registro || avance.created_at || avance.updated_at || null;
+    if (!raw) return null;
+    const date = new Date(raw);
+    return Number.isNaN(date.getTime()) ? null : date;
+  };
+
   const readProgressSummary = (ordenId: number) => {
     try {
       if (hasEnv) {
@@ -988,8 +1024,7 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
         if (avances.length === 0) return null;
         const sorted = [...avances].sort(
           (a: any, b: any) =>
-            new Date(b.created_at || b.fecha_registro || 0).getTime() -
-            new Date(a.created_at || a.fecha_registro || 0).getTime()
+            (getAvanceTimestamp(b)?.getTime() || 0) - (getAvanceTimestamp(a)?.getTime() || 0)
         );
         return sorted[0] || null;
       }
@@ -1000,7 +1035,7 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
         .filter((p: any) => p.orden_trabajo_id === ordenId)
         .sort(
           (a: any, b: any) =>
-            new Date(b.fecha_registro).getTime() - new Date(a.fecha_registro).getTime()
+            (getAvanceTimestamp(b)?.getTime() || 0) - (getAvanceTimestamp(a)?.getTime() || 0)
         )[0];
       return latest || null;
     } catch {
@@ -1013,6 +1048,13 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
       return ordenesFinalizadas
         .map((orden: any) => {
           const resumen = readProgressSummary(orden.id_orden_trabajo);
+          const mecanicoAsignado =
+            orden.mecanico_nombre ||
+            (() => {
+              const mecanico = mechanics.find((m) => m.id_empleado === (orden.empleado_id || orden.solicitud?.mecanico_id));
+              return mecanico ? getMechanicName(mecanico) : null;
+            })();
+
           return {
             ...orden,
             tipo_problema:
@@ -1030,6 +1072,7 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
               orden.patente_vehiculo ||
               orden.solicitud?.patente_vehiculo ||
               'N/A',
+            mecanico_principal: mecanicoAsignado,
             resumen_progreso: resumen,
           };
         })
@@ -1063,12 +1106,17 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
           ? empleados.find((e: any) => e.id_empleado === o.empleado_id)
           : null;
 
+        const mecanicoAsignado =
+          o.mecanico_nombre ||
+          (empleado ? `${empleado.nombre} ${empleado.apellido_paterno}`.trim() : null);
+
         const choferNombre =
           o.chofer ||
           solicitud?.nombre_operador ||
           solicitud?.nombre_chofer ||
           solicitud?.chofer_nombre ||
           (empleado ? `${empleado.nombre} ${empleado.apellido_paterno}`.trim() : null);
+
         const problema =
           o.tipo_problema ||
           solicitud?.tipo_problema ||
@@ -1085,50 +1133,132 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
           ...o,
           tipo_problema: problema,
           chofer: choferNombre || 'N/A',
+          mecanico_principal: mecanicoAsignado || 'Sin registro',
           patente_vehiculo: patente,
           detalle_reparacion: o.detalle_reparacion || solicitud?.detalle_reparacion || '',
         };
       });
   };
 
-  const marcarCierreTecnico = (ordenId: number) => {
-    const ordenes = readLocal('apt_ordenes_trabajo', []);
-    if (!Array.isArray(ordenes)) return;
-    const index = ordenes.findIndex((o: any) => o.id_orden_trabajo === ordenId);
-    if (index === -1) return;
+  const marcarCierreTecnico = async (ordenId: number) => {
+    if (!ordenId) return;
 
-    const cierreTimestamp = new Date().toISOString();
+    if (!hasEnv) {
+      alert('Configura la conexión a Supabase para cerrar una OT.');
+      return;
+    }
 
-    ordenes[index] = {
-      ...ordenes[index],
-      estado_cierre: 'cerrada',
-      fecha_cierre_tecnico: cierreTimestamp,
-    };
-    writeLocal('apt_ordenes_trabajo', ordenes);
-    window.dispatchEvent(
-      new CustomEvent('apt-local-update', {
-        detail: { key: 'apt_ordenes_trabajo' },
-      })
-    );
-    if (hasEnv) {
-      supabase
+    try {
+      setClosingOtId(ordenId);
+      const cierreTimestamp = new Date().toISOString();
+
+      const { error } = await supabase
         .from('orden_trabajo')
         .update({
           estado_cierre: 'cerrada',
           fecha_cierre_tecnico: cierreTimestamp,
         })
-        .eq('id_orden_trabajo', ordenId)
-        .then(({ error }) => {
-          if (error) {
-            console.error('⚠️ Error actualizando cierre técnico en Supabase:', error);
-          }
-          loadData();
-          setCierreTab('finalizadas');
-        });
-    } else {
-      loadData();
+        .eq('id_orden_trabajo', ordenId);
+
+      if (error) {
+        throw error;
+      }
+
+      await loadData();
       setCierreTab('finalizadas');
+      alert('✅ Orden de trabajo cerrada correctamente.');
+    } catch (err) {
+      console.error('Error cerrando OT:', err);
+      alert('No se pudo cerrar la OT. Revisa la consola para más detalles.');
+    } finally {
+      setClosingOtId(null);
     }
+  };
+
+  const renderResumenTecnico = () => {
+    if (!selectedOT) return null;
+    if (normalizeMechanicStatus(selectedOT.estado_ot) !== 'finalizada') return null;
+
+    const resumenProgreso = readProgressSummary(selectedOT.id_orden_trabajo);
+    const avancesOrden = hasEnv
+      ? (Array.isArray(selectedOT.avances) ? selectedOT.avances : [])
+      : (readLocal('apt_progresos_mecanico', []) as any[]).filter(
+          (p: any) => p.orden_trabajo_id === selectedOT.id_orden_trabajo,
+        );
+    const avancesOrdenados = [...avancesOrden].sort(
+      (a: any, b: any) => (getAvanceTimestamp(b)?.getTime() || 0) - (getAvanceTimestamp(a)?.getTime() || 0),
+    );
+
+    return (
+      <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
+        <h4 className="font-semibold text-gray-900 text-lg flex items-center gap-2">
+          <Activity className="text-green-600" size={18} />
+          Resumen técnico del mecánico
+        </h4>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-gray-700">
+          <div>
+            <strong>Detalle de reparación:</strong>{' '}
+            {selectedOT.detalle_reparacion || resumenProgreso?.descripcion_trabajo || 'Sin registrar'}
+          </div>
+          <div>
+            <strong>Última actualización:</strong>{' '}
+            {(() => {
+              const fecha = getAvanceTimestamp(resumenProgreso);
+              return fecha ? fecha.toLocaleString('es-CL') : 'Sin registro';
+            })()}
+          </div>
+        </div>
+
+        {resumenProgreso?.observaciones && (
+          <p className="text-xs text-gray-500">
+            <strong>Observaciones:</strong> {resumenProgreso.observaciones}
+          </p>
+        )}
+
+        {avancesOrdenados.length > 0 ? (
+          <div className="space-y-2 border-t border-gray-200 pt-3">
+            {avancesOrdenados.slice(0, 3).map((avance: any) => {
+              const fecha = getAvanceTimestamp(avance);
+              return (
+                <div key={avance.id_avance_ot || `${avance.orden_trabajo_id}-${avance.created_at}`}
+                  className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-gray-700">
+                      {fecha
+                        ? fecha.toLocaleString('es-CL', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+                        : 'Fecha no registrada'}
+                    </span>
+                    {(avance.hora_inicio || avance.hora_fin) && (
+                      <span className="text-xs text-gray-500">
+                        {avance.hora_inicio || '--:--'} - {avance.hora_fin || '--:--'}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-sm text-gray-700">
+                    <strong>Trabajo:</strong> {avance.descripcion_trabajo || 'Sin descripción'}
+                  </div>
+                  {avance.observaciones && (
+                    <div className="text-xs text-gray-500">
+                      <strong>Obs:</strong> {avance.observaciones}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {avancesOrdenados.length > 3 && (
+              <p className="text-xs text-gray-500">
+                {avancesOrdenados.length - 3} avance(s) adicionales registrados.
+              </p>
+            )}
+          </div>
+        ) : (
+          <p className="text-xs text-gray-500 pt-3 border-t border-gray-200">
+            No se encontraron avances registrados para esta OT.
+          </p>
+        )}
+      </div>
+    );
   };
 
   if (loading) {
@@ -2091,6 +2221,30 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
                             )}
                           </div>
 
+                          {(orden.asignacion_estado === 'rechazada' || orden.asignacion_estado === 'revocada') && (
+                            <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                              <AlertTriangle size={18} className="mt-0.5 flex-shrink-0" />
+                              <div>
+                                <p className="font-semibold">Asignación rechazada por el supervisor.</p>
+                                <p className="text-xs text-red-600/80">
+                                  Debes seleccionar un nuevo mecánico y reenviar la asignación.
+                                </p>
+                              </div>
+                            </div>
+                          )}
+
+                          {orden.asignacion_estado === 'pendiente' && (
+                            <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+                              <Clock size={18} className="mt-0.5 flex-shrink-0" />
+                              <div>
+                                <p className="font-semibold">Asignación en espera de aprobación.</p>
+                                <p className="text-xs text-amber-600/80">
+                                  El mecánico no verá la OT hasta que el supervisor la apruebe.
+                                </p>
+                              </div>
+                            </div>
+                          )}
+
                           <div className="grid gap-3 text-sm text-slate-600 sm:grid-cols-2 lg:grid-cols-3">
                             <span className="inline-flex items-center gap-2">
                               <User size={16} className="text-slate-400" />
@@ -2157,12 +2311,17 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
                                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                                   <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
                                     <CheckCircle size={16} className="text-emerald-600" />
-                                    {new Date(progreso.fecha_registro || progreso.created_at).toLocaleDateString('es-CL', {
-                                      day: '2-digit',
-                                      month: 'short',
-                                      hour: '2-digit',
-                                      minute: '2-digit',
-                                    })}
+                                    {(() => {
+                                      const fecha = getAvanceTimestamp(progreso);
+                                      return fecha
+                                        ? fecha.toLocaleDateString('es-CL', {
+                                            day: '2-digit',
+                                            month: 'short',
+                                            hour: '2-digit',
+                                            minute: '2-digit',
+                                          })
+                                        : 'Fecha no registrada';
+                                    })()}
                                   </div>
                                   {(progreso.hora_inicio || progreso.hora_fin) && (
                                     <span className="inline-flex items-center gap-1 text-xs text-slate-500">
@@ -2184,9 +2343,13 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
                           </div>
                         ) : (
                           <div className="mt-4 rounded-xl border border-dashed border-amber-200 bg-amber-50 px-4 py-6 text-center text-sm text-amber-700">
-                            {resumenProgreso
-                              ? `Último avance registrado el ${new Date(resumenProgreso.fecha_registro).toLocaleString('es-CL')}`
-                              : 'Aún no se registran avances para esta OT.'}
+                            {(() => {
+                              const fecha = getAvanceTimestamp(resumenProgreso);
+                              if (fecha) {
+                                return `Último avance registrado el ${fecha.toLocaleString('es-CL')}`;
+                              }
+                              return 'Aún no se registran avances para esta OT.';
+                            })()}
                             {resumenProgreso?.descripcion_trabajo && (
                               <p className="mt-1 text-xs text-amber-600">{resumenProgreso.descripcion_trabajo}</p>
                             )}
@@ -2241,14 +2404,32 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
                           <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${cierreBadge}`}>
                             {estadoCerrada ? 'Cierre técnico completado' : 'Pendiente de cierre'}
                           </span>
+                          {(() => {
+                            const prioridadConfig = PRIORIDADES_OT.find(
+                              (p) => p.value === (orden.prioridad_ot || orden.solicitud?.prioridad || 'normal'),
+                            );
+                            if (!prioridadConfig) return null;
+                            return (
+                              <span
+                                className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${prioridadConfig.color}`}
+                              >
+                                Prioridad: {prioridadConfig.label}
+                              </span>
+                            );
+                          })()}
                           {cierreBadge === 'bg-emerald-100 text-emerald-700' && resumen && (
                             <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
-                              Último avance: {new Date(resumen.fecha_registro).toLocaleDateString('es-CL', {
-                                day: '2-digit',
-                                month: 'short',
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })}
+                              {(() => {
+                                const fecha = getAvanceTimestamp(resumen);
+                                return fecha
+                                  ? `Último avance: ${fecha.toLocaleDateString('es-CL', {
+                                      day: '2-digit',
+                                      month: 'short',
+                                      hour: '2-digit',
+                                      minute: '2-digit',
+                                    })}`
+                                  : 'Último avance: sin registro de fecha';
+                              })()}
                             </span>
                           )}
                         </div>
@@ -2279,21 +2460,37 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
                         {!estadoCerrada ? (
                           <>
                             <button
-                              className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-blue-700"
-                              onClick={() => {
-                                setSelectedOT(orden);
-                                setModalOpen(true);
-                              }}
+                              className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold shadow ${
+                                closingOtId === orden.id_orden_trabajo
+                                  ? 'bg-blue-300 text-white cursor-wait'
+                                  : 'bg-blue-600 text-white hover:bg-blue-700'
+                              }`}
+                              onClick={() => handleOpenOT(orden)}
+                              disabled={closingOtId === orden.id_orden_trabajo}
                             >
                               <FileText size={16} />
                               Revisar detalle
                             </button>
                             <button
-                              className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-emerald-600"
                               onClick={() => marcarCierreTecnico(orden.id_orden_trabajo)}
+                              disabled={closingOtId === orden.id_orden_trabajo}
+                              className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold text-white shadow ${
+                                closingOtId === orden.id_orden_trabajo
+                                  ? 'bg-emerald-300 cursor-wait'
+                                  : 'bg-emerald-500 hover:bg-emerald-600'
+                              }`}
                             >
-                              <CheckCircle size={16} />
-                              Cerrar OT
+                              {closingOtId === orden.id_orden_trabajo ? (
+                                <>
+                                  <Clock size={16} />
+                                  Cerrando...
+                                </>
+                              ) : (
+                                <>
+                                  <CheckCircle size={16} />
+                                  Cerrar OT
+                                </>
+                              )}
                             </button>
                           </>
                         ) : (
@@ -2575,6 +2772,7 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
             onSave={handleSaveChecklist}
             onCancel={handleCancelChecklist}
             initialData={checklistMap.get(selectedOT.id_orden_trabajo) || {}}
+            readOnly={checklistReadOnly}
           />
         )}
       </Modal>
@@ -2586,6 +2784,7 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
           setModalOpen(false);
           setSelectedOT(null);
           setShowChecklist(false);
+          setModalReadOnly(false);
         }}
         title="Gestionar Orden de Trabajo"
       >
@@ -2606,56 +2805,112 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
                 <div>
                   <strong>Horario:</strong> {selectedOT.bloque_horario}
                 </div>
+                {modalReadOnly && (
+                  <>
+                    <div className="col-span-2">
+                      <strong>Mecánico asignado:</strong> {formData.mecanico_nombre || 'Sin registro'}
+                    </div>
+                    <div className="col-span-2">
+                      <strong>Prioridad:</strong> {PRIORIDADES_OT.find((p) => p.value === selectedOT.prioridad_ot)?.label || 'Normal'}
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
-            {/* Confirmar Ingreso */}
-            <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-              <input
-                type="checkbox"
-                id="confirmado_ingreso"
-                checked={formData.confirmado_ingreso}
-                onChange={(e) => setFormData({ ...formData, confirmado_ingreso: e.target.checked })}
-                className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500"
-              />
-              <label htmlFor="confirmado_ingreso" className="flex items-center gap-2 text-sm font-medium text-gray-700">
-                <CheckCircle className="text-green-600" size={18} />
-                Confirmar que el vehículo ya ingresó al taller (guardia lo registró)
-              </label>
-            </div>
+            {modalReadOnly && renderResumenTecnico()}
 
-            {/* Prioridad de la OT */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Prioridad de la OT
-              </label>
-              <select
-                value={formData.prioridad_ot}
-                onChange={(e) => setFormData({ ...formData, prioridad_ot: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              >
-                {PRIORIDADES_OT.map((prioridad) => (
-                  <option key={prioridad.value} value={prioridad.value}>
-                    {prioridad.label}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {modalReadOnly && (
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                Esta OT se encuentra en cierre técnico. Sólo puedes revisar la información registrada.
+              </div>
+            )}
 
-            {/* Checklist de Diagnóstico */}
+            {!modalReadOnly && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Mecánico principal <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={formData.mecanico_principal_id ?? ''}
+                  onChange={(e) => {
+                    const value = e.target.value ? Number(e.target.value) : null;
+                    const mecanicoSeleccionado = mechanics.find((m) => m.id_empleado === value) || null;
+                    setFormData((prev) => ({
+                      ...prev,
+                      mecanico_principal_id: value,
+                      mecanico_nombre: mecanicoSeleccionado ? getMechanicName(mecanicoSeleccionado) : null,
+                      mecanico_apoyo_ids: Array.isArray(prev.mecanico_apoyo_ids)
+                        ? prev.mecanico_apoyo_ids.filter((id) => id !== value)
+                        : [],
+                    }));
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  disabled={mechanicOptions.length === 0}
+                >
+                  <option value="">Selecciona un mecánico</option>
+                  {mechanicOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                {mechanicOptions.length === 0 && (
+                  <p className="mt-2 text-xs text-red-600">
+                    No hay mecánicos registrados en la base de datos. Registra al menos uno para continuar.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {!modalReadOnly && (
+              <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                <input
+                  type="checkbox"
+                  id="confirmado_ingreso"
+                  checked={formData.confirmado_ingreso}
+                  onChange={(e) => setFormData({ ...formData, confirmado_ingreso: e.target.checked })}
+                  className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500"
+                />
+                <label htmlFor="confirmado_ingreso" className="flex items-center gap-2 text-sm font-medium">
+                  <CheckCircle className="text-green-600" size={18} />
+                  Confirmar que el vehículo ya ingresó al taller (guardia lo registró)
+                </label>
+              </div>
+            )}
+
+            {!modalReadOnly && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Prioridad de la OT
+                </label>
+                <select
+                  value={formData.prioridad_ot}
+                  onChange={(e) => setFormData({ ...formData, prioridad_ot: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  {PRIORIDADES_OT.map((prioridad) => (
+                    <option key={prioridad.value} value={prioridad.value}>
+                      {prioridad.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Checklist de Diagnóstico
               </label>
               {formData.checklist_id ? (
                 <div className="p-3 bg-green-50 rounded-lg mb-2">
-                  <p className="text-sm text-green-700">
+                  <p className={`text-sm ${modalReadOnly ? 'text-green-600' : 'text-green-700'}`}>
                     ✓ Checklist completado (ID: {formData.checklist_id})
                   </p>
                 </div>
               ) : (
                 <div className="p-3 bg-yellow-50 rounded-lg mb-2">
-                  <p className="text-sm text-yellow-700">
+                  <p className={`text-sm ${modalReadOnly ? 'text-yellow-600' : 'text-yellow-700'}`}>
                     ⚠ Checklist pendiente de completar
                   </p>
                 </div>
@@ -2663,191 +2918,43 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
               <button
                 type="button"
                 onClick={handleOpenChecklist}
-                className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+                className={`w-full px-4 py-2 rounded-lg transition-colors flex items-center justify-center gap-2 ${
+                  modalReadOnly
+                    ? 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                }`}
               >
                 <ClipboardList size={18} />
-                {formData.checklist_id ? 'Ver/Editar Checklist' : 'Abrir Checklist de Diagnóstico'}
+                {modalReadOnly ? 'Ver checklist (solo lectura)' : formData.checklist_id ? 'Ver/Editar Checklist' : 'Abrir Checklist de Diagnóstico'}
               </button>
               <p className="text-xs text-gray-500 mt-1">
-                Selecciona y completa el checklist según tipo de vehículo/falla
+                {modalReadOnly
+                  ? 'El checklist se abrirá en modo lectura para revisar el detalle registrado.'
+                  : 'Selecciona y completa el checklist según tipo de vehículo/falla'}
               </p>
             </div>
 
-        {/* Información del avance final (solo si la OT está finalizada) */}
-        {normalizeMechanicStatus(selectedOT.estado_ot) === 'finalizada' && (() => {
-          const resumenProgreso = readProgressSummary(selectedOT.id_orden_trabajo);
-          const avancesOrden = hasEnv
-            ? (Array.isArray(selectedOT.avances) ? selectedOT.avances : [])
-            : (readLocal('apt_progresos_mecanico', []) as any[]).filter(
-                (p: any) => p.orden_trabajo_id === selectedOT.id_orden_trabajo
-              );
-          const avancesOrdenados = [...avancesOrden].sort(
-            (a: any, b: any) =>
-              new Date(b.created_at || b.fecha_registro || 0).getTime() -
-              new Date(a.created_at || a.fecha_registro || 0).getTime()
-          );
-
-          return (
-          <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
-            <h4 className="font-semibold text-gray-900 text-lg flex items-center gap-2">
-              <Activity className="text-green-600" size={18} />
-              Resumen técnico del mecánico
-            </h4>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-gray-700">
-              <div>
-                <strong>Detalle de reparación:</strong>{' '}
-                {selectedOT.detalle_reparacion || resumenProgreso?.descripcion_trabajo || 'Sin registrar'}
-              </div>
-              <div>
-                <strong>Última actualización:</strong>{' '}
-                {resumenProgreso?.created_at
-                  ? new Date(resumenProgreso.created_at).toLocaleString('es-CL')
-                  : '—'}
-              </div>
-              <div>
-                <strong>Estado reportado por mecánico:</strong>{' '}
-                {resumenProgreso?.estado_ot || selectedOT.estado_ot || 'N/A'}
-              </div>
-              <div>
-                <strong>Observaciones:</strong>{' '}
-                {resumenProgreso?.observaciones || 'Sin observaciones'}
-              </div>
-              {(resumenProgreso?.hora_inicio || resumenProgreso?.hora_fin) && (
-                <div>
-                  <strong>Rango de trabajo:</strong>{' '}
-                  {`${resumenProgreso.hora_inicio || '--:--'} - ${resumenProgreso.hora_fin || '--:--'}`}
-                </div>
-              )}
-            </div>
-
-            {Array.isArray(resumenProgreso?.fotos) && resumenProgreso.fotos.length > 0 && (
-              <div>
-                <p className="text-sm font-semibold text-gray-800 mb-2">Fotografías adjuntas</p>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                  {resumenProgreso.fotos.map((foto: string, index: number) => (
-                    <img
-                      key={index}
-                      src={foto}
-                      alt={`Evidencia ${index + 1}`}
-                      className="w-full h-32 object-cover rounded border border-gray-200"
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {avancesOrdenados.length > 0 ? (
-              <div className="space-y-3 pt-3 border-t border-gray-200">
-                <p className="text-sm font-semibold text-gray-900">Avances registrados</p>
-                {avancesOrdenados.slice(0, 3).map((avance: any, index: number) => (
-                  <div
-                    key={`${avance.id_avance_ot || index}`}
-                    className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm text-gray-700 space-y-1"
-                  >
-                    <div className="flex items-center justify-between text-xs text-gray-500">
-                      <span>
-                        {new Date(avance.created_at || avance.fecha_registro).toLocaleString('es-CL')}
-                      </span>
-                      {(avance.hora_inicio || avance.hora_fin) && (
-                        <span>
-                          ⏱️ {avance.hora_inicio || '--:--'} - {avance.hora_fin || '--:--'}
-                        </span>
-                      )}
-                    </div>
-                    <div>
-                      <strong>Trabajo:</strong> {avance.descripcion_trabajo || 'N/A'}
-                    </div>
-                    {avance.observaciones && (
-                      <div className="text-xs text-gray-500">
-                        <strong>Obs:</strong> {avance.observaciones}
-                      </div>
-                    )}
-                  </div>
-                ))}
-                {avancesOrdenados.length > 3 && (
-                  <p className="text-xs text-gray-500">
-                    {avancesOrdenados.length - 3} avance(s) adicionales registrados.
-                  </p>
-                )}
-              </div>
-            ) : (
-              <p className="text-xs text-gray-500 pt-3 border-t border-gray-200">
-                No se encontraron avances registrados para esta OT.
-              </p>
-            )}
-          </div>
-          );
-        })()}
-
-        {/* Mecánicos asignados (solo lectura) */}
-        <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-          <label className="block text-sm font-medium text-gray-700 mb-3">
-            Mecánicos asignados
-          </label>
-          {(() => {
-            const principalId =
-              selectedOT.solicitud?.mecanico_id ||
-              selectedOT.solicitud_detalle?.mecanico_id ||
-              selectedOT.empleado_id ||
-              null;
-            const apoyoIds = Array.isArray(selectedOT.mecanico_apoyo_ids)
-              ? selectedOT.mecanico_apoyo_ids
-              : [];
-            const assignedIds = Array.from(
-              new Set([principalId, ...apoyoIds].filter(Boolean))
-            ) as number[];
-
-            if (assignedIds.length === 0) {
-              return <p className="text-sm text-gray-500">No hay mecánicos asignados a esta OT.</p>;
-            }
-
-            const mechanicsMap = new Map<number, any>();
-            mechanics.forEach((m) => mechanicsMap.set(m.id_empleado, m));
-
-            return (
-              <ul className="space-y-2">
-                {assignedIds.map((id, index) => {
-                  const mechanicInfo = mechanicsMap.get(id);
-                  const nombre = mechanicInfo
-                    ? `${mechanicInfo.nombre} ${mechanicInfo.apellido_paterno || ''}`.trim()
-                    : `Mecánico #${id}`;
-                  const esPrincipal = index === 0 && principalId !== null;
-                  return (
-                    <li
-                      key={id}
-                      className="flex items-center justify-between bg-white border border-gray-200 rounded-md px-3 py-2 text-sm text-gray-700"
-                    >
-                      <span>{nombre}</span>
-                      {esPrincipal && (
-                        <span className="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-700">
-                          Principal
-                        </span>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            );
-          })()}
-        </div>
+            {!modalReadOnly && renderResumenTecnico()}
 
             <div className="flex justify-end gap-3 pt-4 border-t">
               <button
                 onClick={() => {
                   setModalOpen(false);
                   setSelectedOT(null);
+                  setModalReadOnly(false);
                 }}
                 className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
               >
-                Cancelar
+                {modalReadOnly ? 'Cerrar' : 'Cancelar'}
               </button>
-              <button
-                onClick={handleSaveOT}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-              >
-                Guardar Cambios
-              </button>
+              {!modalReadOnly && (
+                <button
+                  onClick={handleSaveOT}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                >
+                  Guardar Cambios
+                </button>
+              )}
             </div>
           </div>
         )}

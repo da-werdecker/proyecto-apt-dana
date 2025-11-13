@@ -162,24 +162,74 @@ const workOrdersCounts = {
 
   const hasEnv = Boolean(import.meta.env.VITE_SUPABASE_URL) && Boolean(import.meta.env.VITE_SUPABASE_ANON_KEY);
 
-  const readLocal = (key: string, fallback: any) => {
-    try {
-      const raw = localStorage.getItem(key);
-      return raw ? JSON.parse(raw) : fallback;
-    } catch {
-      return fallback;
-    }
-  };
-
   const loadSolicitudesHistoricas = async () => {
-    try {
-      let historicas: any[] = [];
+    if (!hasEnv) {
+      setSolicitudesHistoricas([]);
+      return;
+    }
 
-      if (hasEnv) {
-        try {
-          const { data, error } = await supabase
-            .from('solicitud_diagnostico')
-            .select(`
+    try {
+      const { data, error } = await supabase
+        .from('solicitud_diagnostico')
+        .select(`
+          id_solicitud_diagnostico,
+          fecha_solicitada,
+          bloque_horario,
+          bloque_horario_confirmado,
+          tipo_problema,
+          prioridad,
+          estado_solicitud,
+          comentarios,
+          fecha_confirmada,
+          created_at,
+          empleado:empleado_id (nombre, apellido_paterno),
+          vehiculo:vehiculo_id (patente_vehiculo)
+        `)
+        .order('fecha_confirmada', { ascending: false })
+        .limit(100);
+
+      if (error) {
+        throw error;
+      }
+
+      let historicas = (data ?? [])
+        .filter((item: any) => {
+          const estado = (item.estado_solicitud || '').toLowerCase();
+          return ['aprobada', 'aprobado', 'confirmada', 'confirmado', 'rechazada', 'rechazado'].includes(estado);
+        })
+        .map((item: any) => ({
+          id_solicitud_diagnostico: item.id_solicitud_diagnostico,
+          fecha_solicitada: item.fecha_solicitada,
+          bloque_horario: item.bloque_horario,
+          bloque_horario_confirmado: item.bloque_horario_confirmado,
+          tipo_problema: item.tipo_problema,
+          prioridad: item.prioridad,
+          estado_solicitud: (item.estado_solicitud || '').toLowerCase(),
+          comentarios: item.comentarios,
+          fecha_confirmada: item.fecha_confirmada,
+          fecha_resuelta: item.fecha_confirmada,
+          created_at: item.created_at,
+          empleado_nombre: (() => {
+            if (item.empleado) {
+              const nombre = `${item.empleado.nombre || ''} ${item.empleado.apellido_paterno || ''}`.trim();
+              return nombre || 'N/A';
+            }
+            return 'N/A';
+          })(),
+          patente_vehiculo: item.vehiculo?.patente_vehiculo || 'N/A',
+        }));
+
+      const idsSupabase = new Set(historicas.map((h) => h.id_solicitud_diagnostico));
+
+      try {
+        const { data: ordenesHistorial, error: ordenesError } = await supabase
+          .from('orden_trabajo')
+          .select(`
+            id_orden_trabajo,
+            fecha_inicio_ot,
+            estado_ot,
+            solicitud_diagnostico_id,
+            solicitud:solicitud_diagnostico_id (
               id_solicitud_diagnostico,
               fecha_solicitada,
               bloque_horario,
@@ -188,97 +238,72 @@ const workOrdersCounts = {
               prioridad,
               estado_solicitud,
               comentarios,
-              comentarios_respuesta,
               fecha_confirmada,
               created_at,
-              empleado:empleado_id (nombre, apellido_paterno),
-              vehiculo:vehiculo_id (patente_vehiculo)
-            `)
-            .order('fecha_confirmada', { ascending: false })
-            .limit(50);
+              empleado_id,
+              patente_vehiculo
+            ),
+            empleado:empleado_id (nombre, apellido_paterno),
+            vehiculo:vehiculo_id (patente_vehiculo)
+          `)
+          .order('fecha_inicio_ot', { ascending: false })
+          .limit(100);
 
-          if (!error && Array.isArray(data)) {
-            historicas = data
-              .filter((item: any) => {
-                const estado = (item.estado_solicitud || '').toLowerCase();
-                return ['aprobada', 'aprobado', 'confirmada', 'confirmado', 'rechazada', 'rechazado'].includes(estado);
-              })
-              .map((item: any) => ({
-                id_solicitud_diagnostico: item.id_solicitud_diagnostico,
-                fecha_solicitada: item.fecha_solicitada,
-                bloque_horario: item.bloque_horario,
-                bloque_horario_confirmado: item.bloque_horario_confirmado,
-                tipo_problema: item.tipo_problema,
-                prioridad: item.prioridad,
-                estado_solicitud: (item.estado_solicitud || '').toLowerCase(),
-                comentarios: item.comentarios,
-                comentarios_respuesta: item.comentarios_respuesta,
-                fecha_confirmada: item.fecha_confirmada,
-                fecha_resuelta: item.fecha_confirmada,
-                created_at: item.created_at,
-                empleado_nombre: item.empleado
-                  ? `${item.empleado.nombre || ''} ${item.empleado.apellido_paterno || ''}`.trim()
-                  : 'N/A',
-                patente_vehiculo: item.vehiculo?.patente_vehiculo || 'N/A',
-              }));
-          }
-        } catch (err) {
-          console.error('⚠️ Error cargando historial desde Supabase:', err);
+        if (!ordenesError && Array.isArray(ordenesHistorial)) {
+          ordenesHistorial.forEach((orden: any) => {
+            const solicitud = orden.solicitud || null;
+            const id = solicitud?.id_solicitud_diagnostico || orden.solicitud_diagnostico_id;
+            if (!id || idsSupabase.has(id)) return;
+
+            const empleadoNombre = (() => {
+              if (orden.empleado) {
+                const nombreEmpleado = `${orden.empleado.nombre || ''} ${
+                  orden.empleado.apellido_paterno || ''
+                }`.trim();
+                if (nombreEmpleado) {
+                  return nombreEmpleado;
+                }
+              }
+              return 'N/A';
+            })();
+
+            historicas.push({
+              id_solicitud_diagnostico: id,
+              fecha_solicitada: solicitud?.fecha_solicitada || null,
+              bloque_horario: solicitud?.bloque_horario || null,
+              bloque_horario_confirmado:
+                solicitud?.bloque_horario_confirmado || solicitud?.bloque_horario || null,
+              tipo_problema: solicitud?.tipo_problema || 'Diagnóstico',
+              prioridad: solicitud?.prioridad || 'normal',
+              estado_solicitud: (solicitud?.estado_solicitud || orden.estado_ot || 'confirmada').toLowerCase(),
+              comentarios: solicitud?.comentarios || '',
+              fecha_confirmada: solicitud?.fecha_confirmada || orden.fecha_inicio_ot || null,
+              fecha_resuelta: orden.fecha_inicio_ot || solicitud?.fecha_confirmada || null,
+              created_at: solicitud?.created_at || orden.fecha_inicio_ot || null,
+              empleado_nombre: empleadoNombre,
+              patente_vehiculo:
+                solicitud?.patente_vehiculo ||
+                orden.vehiculo?.patente_vehiculo ||
+                solicitud?.patente_vehiculo ||
+                'N/A',
+            });
+            idsSupabase.add(id);
+          });
         }
+      } catch (ordenesCatch) {
+        console.warn('⚠️ No se pudieron cargar órdenes para historial:', ordenesCatch);
       }
 
-      if (!hasEnv || historicas.length === 0) {
-        const solicitudesLocal = readLocal('apt_solicitudes_diagnostico', []);
-        const locales = Array.isArray(solicitudesLocal)
-          ? solicitudesLocal.filter((s: any) =>
-              ['aprobada', 'aprobado', 'rechazada', 'rechazado', 'confirmada', 'confirmado'].includes(
-                (s.estado_solicitud || '').toLowerCase()
-              )
-            )
-          : [];
-
-        const normalizadasLocales = locales.map((s: any) => ({
-          id_solicitud_diagnostico: s.id_solicitud_diagnostico || s.id,
-          fecha_solicitada: s.fecha_solicitada,
-          bloque_horario: s.bloque_horario,
-          bloque_horario_confirmado: s.bloque_horario_confirmado || s.bloque_horario,
-          tipo_problema: s.tipo_problema,
-          prioridad: s.prioridad,
-          estado_solicitud: (s.estado_solicitud || '').toLowerCase(),
-          comentarios: s.comentarios || '',
-          comentarios_respuesta: s.comentarios_respuesta || '',
-          fecha_confirmada: s.fecha_confirmada || null,
-          fecha_resuelta: s.fecha_resuelta || s.fecha_confirmada || null,
-          created_at: s.created_at || null,
-          empleado_nombre: s.empleado_nombre || s.chofer_nombre || 'N/A',
-          patente_vehiculo: s.patente_vehiculo || 'N/A',
-        }));
-
-        historicas = historicas.length > 0 ? historicas : normalizadasLocales.slice(0, 50);
-      }
-
-      historicas.sort(
-        (a, b) =>
-          new Date(b.fecha_confirmada || b.created_at || b.fecha_solicitada || 0).getTime() -
-          new Date(a.fecha_confirmada || a.created_at || a.fecha_solicitada || 0).getTime()
-      );
+      historicas = historicas.sort(
+          (a: any, b: any) =>
+            new Date(b.fecha_confirmada || b.created_at || b.fecha_solicitada || 0).getTime() -
+            new Date(a.fecha_confirmada || a.created_at || a.fecha_solicitada || 0).getTime()
+        );
 
       setSolicitudesHistoricas(historicas);
     } catch (error) {
       console.error('Error cargando solicitudes históricas:', error);
       setSolicitudesHistoricas([]);
-    }
-  };
-
-  const writeLocal = (key: string, value: any) => {
-    try {
-      const serialized = JSON.stringify(value);
-      localStorage.setItem(key, serialized);
-      console.log(`💾 Guardado en localStorage [${key}]:`, serialized.length, 'caracteres');
-      return true;
-    } catch (error) {
-      console.error(`❌ Error guardando en localStorage [${key}]:`, error);
-      return false;
     }
   };
 
@@ -311,76 +336,31 @@ const workOrdersCounts = {
   const loadSolicitudes = async () => {
     try {
       setLoading(true);
-      let solicitudesData: any[] = [];
 
-      // Intentar cargar desde Supabase solo si está configurado y funciona
-      // Si falla, usar solo localStorage sin mostrar errores
-      if (hasEnv) {
-        try {
-          const { data, error } = await supabase
-            .from('solicitud_diagnostico')
-            .select(`
-              *,
-              empleado:empleado_id(nombre, apellido_paterno),
-              vehiculo:vehiculo_id(patente_vehiculo)
-            `)
-            .eq('estado_solicitud', 'pendiente_confirmacion')
-            .order('created_at', { ascending: true });
-          
-          if (!error && data) {
-            solicitudesData = data;
-            console.log('📋 Solicitudes desde Supabase:', data.length);
-          }
-          // Si hay error (tabla no existe, etc.), simplemente usar localStorage sin mostrar error
-        } catch (err) {
-          // Silenciar errores de Supabase si estamos trabajando localmente
-          // console.log('📦 Trabajando solo con localStorage (Supabase no disponible)');
-        }
+      if (!hasEnv) {
+        setSolicitudes([]);
+        setLoading(false);
+        return;
       }
 
-      // Cargar de localStorage
-      const localSolicitudes = readLocal('apt_solicitudes_diagnostico', []);
-      console.log('📦 Todas las solicitudes en localStorage:', localSolicitudes.length);
-      console.log('📦 Contenido completo de localStorage:', JSON.stringify(localSolicitudes, null, 2));
-      
-      // Filtrar solicitudes pendientes (verificar diferentes formatos de estado)
-      const localFiltered = localSolicitudes.filter((s: any) => {
-        const estadoOriginal = s.estado_solicitud || s.estado || '';
-        const estado = String(estadoOriginal).toLowerCase().trim();
-        
-        // Estados que indican confirmación (excluir estos)
-        const estadosConfirmados = ['confirmada', 'confirmado', 'completada', 'completado'];
-        const esConfirmada = estadosConfirmados.includes(estado);
-        
-        // Estados que indican pendiente
-        const estadosPendientes = ['pendiente_confirmacion', 'pendiente de confirmación', 'pendiente', 'pendiente confirmacion'];
-        const esPendiente = estadosPendientes.includes(estado) || !estado; // Si no tiene estado, asumir que está pendiente
-        
-        const resultado = esPendiente && !esConfirmada;
-        console.log(`🔍 Solicitud ${s.id_solicitud_diagnostico}: estado_original="${estadoOriginal}", estado_normalizado="${estado}", esPendiente=${esPendiente}, esConfirmada=${esConfirmada}, INCLUIR=${resultado}`);
-        
-        return resultado;
-      });
-      
-      console.log('✅ Solicitudes pendientes encontradas:', localFiltered.length);
-      
-      // Combinar y obtener información del empleado
-      const allSolicitudes = [...solicitudesData, ...localFiltered];
-      const uniqueSolicitudes = allSolicitudes.filter((s, index, self) => 
-        index === self.findIndex((t) => t.id_solicitud_diagnostico === s.id_solicitud_diagnostico)
-      );
+      const { data, error } = await supabase
+        .from('solicitud_diagnostico')
+        .select(`
+          *,
+          empleado:empleado_id(nombre, apellido_paterno),
+          vehiculo:vehiculo_id(patente_vehiculo)
+        `)
+        .eq('estado_solicitud', 'pendiente_confirmacion')
+        .order('created_at', { ascending: false });
 
-      console.log('📊 Total de solicitudes únicas:', uniqueSolicitudes.length);
+      if (error) {
+        throw error;
+      }
 
-      // Enriquecer con información del empleado
-      const empleados = readLocal('apt_empleados', []);
-      const solicitudesEnriquecidas = uniqueSolicitudes.map((solicitud) => {
+      const solicitudesEnriquecidas = (data ?? []).map((solicitud) => {
         const empleadoSupabase = (solicitud as any)?.empleado;
-        const empleadoLocal = empleados.find((e: any) => e.id_empleado === solicitud.empleado_id);
         const empleadoNombre = empleadoSupabase
           ? `${empleadoSupabase.nombre || ''} ${empleadoSupabase.apellido_paterno || ''}`.trim()
-          : empleadoLocal
-          ? `${empleadoLocal.nombre || ''} ${empleadoLocal.apellido_paterno || ''}`.trim()
           : 'Chofer';
         const patente = (solicitud as any)?.vehiculo?.patente_vehiculo || solicitud.patente_vehiculo || 'N/A';
         return {
@@ -390,14 +370,25 @@ const workOrdersCounts = {
         };
       });
 
-      console.log('✅ Solicitudes enriquecidas para mostrar:', solicitudesEnriquecidas.length);
-      setSolicitudes(solicitudesEnriquecidas);
+      const sortByRecent = (lista: any[]) =>
+        [...lista].sort((a, b) => {
+          const dateA =
+            (a.created_at && new Date(a.created_at).getTime()) ||
+            (a.fecha_confirmada && new Date(a.fecha_confirmada).getTime()) ||
+            (a.fecha_solicitada && new Date(a.fecha_solicitada).getTime()) ||
+            0;
+          const dateB =
+            (b.created_at && new Date(b.created_at).getTime()) ||
+            (b.fecha_confirmada && new Date(b.fecha_confirmada).getTime()) ||
+            (b.fecha_solicitada && new Date(b.fecha_solicitada).getTime()) ||
+            0;
+          return dateB - dateA;
+        });
+
+      setSolicitudes(sortByRecent(solicitudesEnriquecidas));
     } catch (error) {
       console.error('❌ Error loading solicitudes:', error);
-      // Fallback: intentar cargar todas las solicitudes sin filtrar
-      const localSolicitudes = readLocal('apt_solicitudes_diagnostico', []);
-      console.log('📦 Fallback: todas las solicitudes locales:', localSolicitudes);
-      setSolicitudes(localSolicitudes || []);
+      setSolicitudes([]);
     } finally {
       setLoading(false);
     }
@@ -509,155 +500,49 @@ const workOrdersCounts = {
         hora_confirmada: `${formData.fecha_confirmada} ${formData.bloque_horario_confirmado}`,
       };
 
-      // Guardar en Supabase si está configurado y funciona
-      let usarSupabase = false;
-      if (hasEnv) {
-        try {
-          console.log('🔍 Intentando usar Supabase...');
-          // Intentar actualizar en Supabase
-          const { error: updateError } = await supabase
-            .from('solicitud_diagnostico')
-            .update({
-              estado_solicitud: 'confirmada',
-              tipo_trabajo: formData.tipo_trabajo,
-              fecha_confirmada: formData.fecha_confirmada,
-              bloque_horario_confirmado: formData.bloque_horario_confirmado,
-              box_id: formData.box_id ? parseInt(formData.box_id) : null,
-              mecanico_id: formData.mecanico_id ? parseInt(formData.mecanico_id) : null,
-            })
-            .eq('id_solicitud_diagnostico', selectedSolicitud.id_solicitud_diagnostico);
-
-          if (updateError) {
-            console.log('⚠️ Supabase falló, usando localStorage:', updateError.message);
-            usarSupabase = false;
-          } else {
-            console.log('✅ Supabase funcionó correctamente');
-            usarSupabase = true;
-            
-            // Crear OT en Supabase
-            const { data: otData, error: otError } = await supabase
-              .from('orden_trabajo')
-              .insert([nuevaOT])
-              .select()
-              .single();
-
-            if (otData && !otError) {
-              // Actualizar solicitud con OT ID
-              await supabase
-                .from('solicitud_diagnostico')
-                .update({ orden_trabajo_id: otData.id_orden_trabajo })
-                .eq('id_solicitud_diagnostico', selectedSolicitud.id_solicitud_diagnostico);
-            } else if (otError) {
-              console.warn('⚠️ Error creando OT en Supabase:', otError);
-              usarSupabase = false;
-            }
-          }
-        } catch (supabaseError) {
-          console.log('⚠️ Error en Supabase, usando localStorage:', supabaseError);
-          usarSupabase = false;
-        }
+      if (!hasEnv) {
+        throw new Error('Supabase no está configurado. No es posible confirmar la solicitud.');
       }
-      
-      // Si no se usa Supabase (ya sea porque no está configurado o porque falló), usar localStorage
-      if (!usarSupabase) {
-        console.log('📦 Usando localStorage para guardar...');
-        // Guardar localmente
-      // Cargar datos locales
-        const solicitudes = readLocal('apt_solicitudes_diagnostico', []);
-        const solicitudId = selectedSolicitud.id_solicitud_diagnostico;
-        
-      // Buscar la solicitud correspondiente
-      const solicitudIndex = solicitudes.findIndex(
-        (s: any) =>
-          s.id_solicitud_diagnostico === solicitudId || 
-          String(s.id_solicitud_diagnostico) === String(solicitudId)
-        );
-        
-        if (solicitudIndex === -1) {
-        throw new Error('No se encontró la solicitud para actualizar en localStorage');
-        }
-        
-        const ordenes = readLocal('apt_ordenes_trabajo', []);
-      const otId = Date.now();
-        const nuevaOTLocal = {
-          id_orden_trabajo: otId,
-          ...nuevaOT,
-          created_at: new Date().toISOString(),
-        patente_vehiculo: selectedSolicitud.patente_vehiculo,
-        };
-        ordenes.push(nuevaOTLocal);
-        writeLocal('apt_ordenes_trabajo', ordenes);
 
-        const solicitudActualizadaFinal: any = {
-        ...solicitudes[solicitudIndex],
-          tipo_trabajo: formData.tipo_trabajo as 'mantencion' | 'correctivo' | 'emergencia',
+      console.log('🔍 Intentando usar Supabase...');
+
+      const { error: updateError } = await supabase
+        .from('solicitud_diagnostico')
+        .update({
+          estado_solicitud: 'confirmada',
+          tipo_trabajo: formData.tipo_trabajo,
           fecha_confirmada: formData.fecha_confirmada,
           bloque_horario_confirmado: formData.bloque_horario_confirmado,
           box_id: formData.box_id ? parseInt(formData.box_id) : null,
           mecanico_id: formData.mecanico_id ? parseInt(formData.mecanico_id) : null,
-          orden_trabajo_id: otId,
-        estado_solicitud: 'confirmada',
-      };
+        })
+        .eq('id_solicitud_diagnostico', selectedSolicitud.id_solicitud_diagnostico);
 
-      const solicitudesActualizadas = solicitudes.map((s: any, index: number) =>
-        index === solicitudIndex ? solicitudActualizadaFinal : s
-      );
-
-      writeLocal('apt_solicitudes_diagnostico', solicitudesActualizadas);
-      await new Promise((resolve) => setTimeout(resolve, 100));
-        
-        // Verificar INMEDIATAMENTE después de guardar
-        const solicitudesVerificadas = readLocal('apt_solicitudes_diagnostico', []);
-        console.log('📋 Total de solicitudes después de leer de localStorage:', solicitudesVerificadas.length);
-        
-        const solicitudVerificada = solicitudesVerificadas.find((s: any) => 
-          String(s.id_solicitud_diagnostico) === String(solicitudId)
-        );
-        
-        console.log('✅ Solicitud actualizada completa (objeto en memoria):', JSON.stringify(solicitudActualizadaFinal, null, 2));
-        console.log('✅ Verificación INMEDIATA - Estado guardado:', solicitudVerificada?.estado_solicitud);
-        console.log('✅ Verificación INMEDIATA - ID de OT:', solicitudVerificada?.orden_trabajo_id);
-        console.log('✅ Verificación INMEDIATA - Solicitud completa (desde localStorage):', JSON.stringify(solicitudVerificada, null, 2));
-        
-        if (!solicitudVerificada) {
-          console.error('❌ ERROR: No se encontró la solicitud después de guardar!');
-          throw new Error('No se encontró la solicitud después de guardar');
-        }
-        
-        if (solicitudVerificada.estado_solicitud !== 'confirmada') {
-          console.error('❌ ERROR: El estado NO se guardó correctamente!');
-          console.error('❌ Estado esperado: confirmada');
-          console.error('❌ Estado obtenido:', solicitudVerificada.estado_solicitud);
-          console.error('❌ Tipo de estado:', typeof solicitudVerificada.estado_solicitud);
-          console.error('❌ Comparación exacta:', solicitudVerificada.estado_solicitud === 'confirmada');
-          console.error('❌ Comparación con toLowerCase:', solicitudVerificada.estado_solicitud?.toLowerCase() === 'confirmada');
-          alert(`ERROR: El estado no se guardó correctamente. Estado actual: ${solicitudVerificada.estado_solicitud}`);
-          throw new Error(`Error al guardar el estado de la solicitud. Estado obtenido: ${solicitudVerificada.estado_solicitud}`);
-        }
-        
-        console.log('✅✅✅ VERIFICACIÓN EXITOSA: El estado se guardó correctamente como "confirmada"');
+      if (updateError) {
+        throw updateError;
       }
 
+      const { data: otData, error: otError } = await supabase
+        .from('orden_trabajo')
+        .insert([nuevaOT])
+        .select()
+        .single();
+
+      if (otError || !otData) {
+        throw otError || new Error('No se pudo crear la Orden de Trabajo en Supabase.');
+      }
+
+      const { error: linkError } = await supabase
+        .from('solicitud_diagnostico')
+        .update({ orden_trabajo_id: otData.id_orden_trabajo })
+        .eq('id_solicitud_diagnostico', selectedSolicitud.id_solicitud_diagnostico);
+
+      if (linkError) {
+        throw linkError;
+      }
+      
       console.log('✅ Proceso de guardado completado exitosamente');
-      
-      // Verificación final desde localStorage
-      if (!hasEnv) {
-        const solicitudesVerificadasFinal = readLocal('apt_solicitudes_diagnostico', []);
-        const solicitudVerificadaFinal = solicitudesVerificadasFinal.find((s: any) => 
-          String(s.id_solicitud_diagnostico) === String(selectedSolicitud.id_solicitud_diagnostico)
-        );
-        console.log('🔍 Verificación FINAL - Estado guardado:', solicitudVerificadaFinal?.estado_solicitud);
-        console.log('🔍 Verificación FINAL - ID de OT:', solicitudVerificadaFinal?.orden_trabajo_id);
-        
-        if (solicitudVerificadaFinal?.estado_solicitud !== 'confirmada') {
-          console.error('❌ ERROR CRÍTICO: El estado final NO es confirmada!');
-          alert('Error: El estado no se guardó correctamente. Por favor, recarga la página.');
-        }
-      }
-      
-      // Guardar el ID antes de limpiar el estado
-      const solicitudIdConfirmada = selectedSolicitud.id_solicitud_diagnostico;
-      
+
       setSuccess('Solicitud confirmada y Orden de Trabajo creada exitosamente.');
       setProcessing(false);
       
@@ -672,29 +557,10 @@ const workOrdersCounts = {
         mecanico_id: '',
       });
       
-      // Esperar un momento para asegurar que localStorage se haya actualizado
-      await new Promise(resolve => setTimeout(resolve, 200));
-      
       // Recargar datos inmediatamente
-      console.log('🔄 Recargando solicitudes después de confirmar...');
       await loadSolicitudes();
-      console.log('🔄 Recargando órdenes de trabajo después de confirmar...');
       await loadWorkOrders();
-      console.log('🔄 Actualizando historial de solicitudes...');
       await loadSolicitudesHistoricas();
-      
-      // Verificación final después de recargar
-      const solicitudesFinales = readLocal('apt_solicitudes_diagnostico', []);
-      const solicitudConfirmada = solicitudesFinales.find((s: any) => 
-        String(s.id_solicitud_diagnostico) === String(solicitudIdConfirmada)
-      );
-      console.log('🔍 DESPUÉS DE RECARGAR - ID buscado:', solicitudIdConfirmada);
-      console.log('🔍 DESPUÉS DE RECARGAR - Estado de la solicitud confirmada:', solicitudConfirmada?.estado_solicitud);
-      console.log('🔍 DESPUÉS DE RECARGAR - Total de solicitudes en localStorage:', solicitudesFinales.length);
-      console.log('🔍 DESPUÉS DE RECARGAR - Estados de todas las solicitudes:', solicitudesFinales.map((s: any) => ({
-        id: s.id_solicitud_diagnostico,
-        estado: s.estado_solicitud
-      })));
       
       setTimeout(() => setSuccess(''), 3000);
       
@@ -711,21 +577,14 @@ const workOrdersCounts = {
     if (!confirm('¿Estás seguro de rechazar esta solicitud?')) return;
 
     try {
-      if (hasEnv) {
-        await supabase
-          .from('solicitud_diagnostico')
-          .update({ estado_solicitud: 'rechazada' })
-          .eq('id_solicitud_diagnostico', solicitud.id_solicitud_diagnostico);
-      } else {
-        const solicitudes = readLocal('apt_solicitudes_diagnostico', []);
-        const solicitudIndex = solicitudes.findIndex((s: any) => 
-          s.id_solicitud_diagnostico === solicitud.id_solicitud_diagnostico
-        );
-        if (solicitudIndex !== -1) {
-          solicitudes[solicitudIndex].estado_solicitud = 'rechazada';
-          writeLocal('apt_solicitudes_diagnostico', solicitudes);
-        }
+      if (!hasEnv) {
+        throw new Error('Supabase no está configurado. No es posible rechazar la solicitud.');
       }
+
+      await supabase
+        .from('solicitud_diagnostico')
+        .update({ estado_solicitud: 'rechazada' })
+        .eq('id_solicitud_diagnostico', solicitud.id_solicitud_diagnostico);
 
       await loadSolicitudes();
       await loadWorkOrders();
@@ -753,119 +612,80 @@ const workOrdersCounts = {
 
   // Función para cargar agenda (solicitudes confirmadas y órdenes de trabajo)
   const loadAgenda = async () => {
+    if (!hasEnv) {
+      setAgendaItems([]);
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
-      const empleadosLocal = readLocal('apt_empleados', []);
-      const vehiculosLocal = readLocal('apt_vehiculos', []);
-      const ordenesLocal = readLocal('apt_ordenes_trabajo', []);
-      const solicitudesLocal = readLocal('apt_solicitudes_diagnostico', []);
 
-      const mapaAgenda = new Map<string, any>();
-
-      if (hasEnv) {
-        try {
-          const [{ data: solicitudesDb, error: solicitudesError }, { data: empleadosDb }, { data: vehiculosDb }, { data: ordenesDb }] =
-            await Promise.all([
-              supabase
-                .from('solicitud_diagnostico')
-                .select(
-                  'id_solicitud_diagnostico, fecha_confirmada, fecha_solicitada, bloque_horario_confirmado, bloque_horario, tipo_problema, prioridad, estado_solicitud, empleado_id, vehiculo_id, orden_trabajo_id'
-                )
-                .eq('estado_solicitud', 'confirmada')
-                .order('fecha_confirmada', { ascending: true }),
-              supabase.from('empleado').select('id_empleado, nombre, apellido_paterno'),
-              supabase.from('vehiculo').select('id_vehiculo, patente_vehiculo'),
-              supabase
-                .from('orden_trabajo')
-                .select('id_orden_trabajo, solicitud_diagnostico_id, mecanico_id, estado_ot')
-            ]);
-
-          if (!solicitudesError && Array.isArray(solicitudesDb)) {
-            const empleadoMap = new Map<number, any>();
-            (empleadosDb || []).forEach((empleado: any) => empleadoMap.set(empleado.id_empleado, empleado));
-
-            const vehiculoMap = new Map<number, any>();
-            (vehiculosDb || []).forEach((vehiculo: any) => vehiculoMap.set(vehiculo.id_vehiculo, vehiculo));
-
-            const ordenMap = new Map<number, any>();
-            (ordenesDb || []).forEach((orden: any) => {
-              if (orden?.solicitud_diagnostico_id) {
-                ordenMap.set(orden.solicitud_diagnostico_id, orden);
-              }
-            });
-
-            solicitudesDb.forEach((solicitud: any) => {
-              const key = String(solicitud.id_solicitud_diagnostico);
-              const empleado = empleadoMap.get(solicitud.empleado_id);
-              const vehiculo = vehiculoMap.get(solicitud.vehiculo_id);
-              const orden = ordenMap.get(solicitud.id_solicitud_diagnostico);
-
-              mapaAgenda.set(key, {
-                id: solicitud.id_solicitud_diagnostico,
-                fecha: solicitud.fecha_confirmada || solicitud.fecha_solicitada,
-                bloque_horario: solicitud.bloque_horario_confirmado || solicitud.bloque_horario,
-                patente: vehiculo?.patente_vehiculo || solicitud.patente_vehiculo || 'N/A',
-                chofer: empleado ? `${empleado.nombre || ''} ${empleado.apellido_paterno || ''}`.trim() || 'N/A' : 'N/A',
-                mecanico: orden?.mecanico_id ? `Mecánico #${orden.mecanico_id}` : 'Sin asignar',
-                tipo_problema: solicitud.tipo_problema,
-                prioridad: solicitud.prioridad,
-                estado: orden?.estado_ot || solicitud.estado_solicitud,
-                orden_id: orden?.id_orden_trabajo || solicitud.orden_trabajo_id || null,
-              });
-            });
-          }
-        } catch (error) {
-          console.error('⚠️ Error cargando agenda desde Supabase:', error);
-        }
-      }
-
-      const solicitudesLocalesConfirmadas = Array.isArray(solicitudesLocal)
-        ? solicitudesLocal.filter(
-            (s: any) =>
-              (s.estado_solicitud === 'confirmada' || s.estado_solicitud === 'confirmado') && s.fecha_confirmada
+      const [
+        { data: solicitudesDb, error: solicitudesError },
+        { data: empleadosDb, error: empleadosError },
+        { data: vehiculosDb, error: vehiculosError },
+        { data: ordenesDb, error: ordenesError },
+      ] = await Promise.all([
+        supabase
+          .from('solicitud_diagnostico')
+          .select(
+            'id_solicitud_diagnostico, fecha_confirmada, fecha_solicitada, bloque_horario_confirmado, bloque_horario, tipo_problema, prioridad, estado_solicitud, empleado_id, vehiculo_id, orden_trabajo_id'
           )
-        : [];
+          .in('estado_solicitud', ['confirmada', 'confirmado'])
+          .order('fecha_confirmada', { ascending: true }),
+        supabase.from('empleado').select('id_empleado, nombre, apellido_paterno'),
+        supabase.from('vehiculo').select('id_vehiculo, patente_vehiculo'),
+        supabase.from('orden_trabajo').select('id_orden_trabajo, solicitud_diagnostico_id, mecanico_id, estado_ot'),
+      ]);
 
-      solicitudesLocalesConfirmadas.forEach((solicitud: any) => {
-        const key = String(solicitud.id_solicitud_diagnostico || solicitud.id);
-        if (mapaAgenda.has(key)) {
-          return;
+      if (solicitudesError) throw solicitudesError;
+      if (empleadosError) throw empleadosError;
+      if (vehiculosError) throw vehiculosError;
+      if (ordenesError) throw ordenesError;
+
+      const empleadoMap = new Map<number, any>();
+      (empleadosDb || []).forEach((empleado: any) => empleadoMap.set(empleado.id_empleado, empleado));
+
+      const vehiculoMap = new Map<number, any>();
+      (vehiculosDb || []).forEach((vehiculo: any) => vehiculoMap.set(vehiculo.id_vehiculo, vehiculo));
+
+      const ordenMap = new Map<number, any>();
+      (ordenesDb || []).forEach((orden: any) => {
+        if (orden?.solicitud_diagnostico_id) {
+          ordenMap.set(orden.solicitud_diagnostico_id, orden);
         }
+      });
 
-        const empleado = Array.isArray(empleadosLocal)
-          ? empleadosLocal.find((e: any) => e.id_empleado === solicitud.empleado_id)
-          : null;
-        const vehiculo = Array.isArray(vehiculosLocal)
-          ? vehiculosLocal.find((v: any) => v.id_vehiculo === solicitud.vehiculo_id)
-          : null;
-        const orden = Array.isArray(ordenesLocal)
-          ? ordenesLocal.find((o: any) => o.solicitud_diagnostico_id === solicitud.id_solicitud_diagnostico)
-          : null;
+      const itemsEnriquecidos = (solicitudesDb || [])
+        .map((solicitud: any) => {
+          const empleado = empleadoMap.get(solicitud.empleado_id);
+          const vehiculo = vehiculoMap.get(solicitud.vehiculo_id);
+          const orden = ordenMap.get(solicitud.id_solicitud_diagnostico);
 
-        mapaAgenda.set(key, {
-          id: solicitud.id_solicitud_diagnostico,
-          fecha: solicitud.fecha_confirmada,
-          bloque_horario: solicitud.bloque_horario_confirmado || solicitud.bloque_horario,
-          patente: solicitud.patente_vehiculo || vehiculo?.patente_vehiculo || 'N/A',
-          chofer: empleado ? `${empleado.nombre} ${empleado.apellido_paterno}` : 'N/A',
-          mecanico: orden?.mecanico_id ? `Mecánico #${orden.mecanico_id}` : 'Sin asignar',
-          tipo_problema: solicitud.tipo_problema,
-          prioridad: solicitud.prioridad,
-          estado: orden?.estado_ot || 'confirmada',
-          orden_id: orden?.id_orden_trabajo || null,
+          return {
+            id: solicitud.id_solicitud_diagnostico,
+            fecha: solicitud.fecha_confirmada || solicitud.fecha_solicitada,
+            bloque_horario: solicitud.bloque_horario_confirmado || solicitud.bloque_horario,
+            patente: solicitud.patente_vehiculo || vehiculo?.patente_vehiculo || 'N/A',
+            chofer: empleado ? `${empleado.nombre || ''} ${empleado.apellido_paterno || ''}`.trim() || 'N/A' : 'N/A',
+            mecanico: orden?.mecanico_id ? `Mecánico #${orden.mecanico_id}` : 'Sin asignar',
+            tipo_problema: solicitud.tipo_problema,
+            prioridad: solicitud.prioridad,
+            estado: orden?.estado_ot || solicitud.estado_solicitud,
+            orden_id: orden?.id_orden_trabajo || solicitud.orden_trabajo_id || null,
+          };
+        })
+        .sort((a, b) => {
+          const dateA = a.fecha ? new Date(a.fecha).getTime() : 0;
+          const dateB = b.fecha ? new Date(b.fecha).getTime() : 0;
+          return dateA - dateB;
         });
-      });
-
-      const itemsEnriquecidos = Array.from(mapaAgenda.values()).sort((a, b) => {
-        const dateA = a.fecha ? new Date(a.fecha).getTime() : 0;
-        const dateB = b.fecha ? new Date(b.fecha).getTime() : 0;
-        return dateA - dateB;
-      });
 
       setAgendaItems(itemsEnriquecidos);
-      console.log('📅 Items de agenda cargados:', itemsEnriquecidos.length);
     } catch (error) {
       console.error('Error loading agenda:', error);
+      setAgendaItems([]);
     } finally {
       setLoading(false);
     }
@@ -920,56 +740,32 @@ const workOrdersCounts = {
 
   // Función para cargar vehículos
   const loadVehicles = async () => {
+    if (!hasEnv) {
+      setVehicles([]);
+      setVehicleStats({ enRuta: 0, enTaller: 0, enEspera: 0, fueraServicio: 0 });
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
-      let vehiclesData: any[] = [];
+      const { data, error } = await supabase
+        .from('vehiculo')
+        .select(`
+          *,
+          modelo:modelo_vehiculo_id(nombre_modelo, marca:marca_vehiculo_id(nombre_marca)),
+          tipo:tipo_vehiculo_id(tipo_vehiculo),
+          sucursal:sucursal_id(nombre_sucursal)
+        `)
+        .order('patente_vehiculo', { ascending: true });
 
-      if (hasEnv) {
-        try {
-          const { data, error } = await supabase
-            .from('vehiculo')
-            .select(`
-              *,
-              modelo:modelo_vehiculo_id(nombre_modelo, marca:marca_vehiculo_id(nombre_marca)),
-              tipo:tipo_vehiculo_id(tipo_vehiculo),
-              sucursal:sucursal_id(nombre_sucursal)
-            `)
-            .order('patente_vehiculo', { ascending: true });
-          
-          if (!error && data) {
-            vehiclesData = data;
-          }
-        } catch (err) {
-          console.error('Error cargando vehículos desde Supabase:', err);
-        }
-      } else {
-        // Fallback local sólo cuando no hay Supabase
-      const vehiculosLocal = readLocal('apt_vehiculos', []);
-      const modelosLocal = readLocal('apt_modelos', []);
-      const marcasLocal = readLocal('apt_marcas', []);
-      const tiposLocal = readLocal('apt_tipos', []);
-      const sucursalesLocal = readLocal('apt_sucursales', []);
-
-      const vehiculosEnriquecidos = vehiculosLocal.map((v: any) => {
-        const modelo = modelosLocal.find((m: any) => m.id_modelo_vehiculo === v.modelo_vehiculo_id);
-        const marca = marcasLocal.find((ma: any) => ma.id_marca_vehiculo === modelo?.marca_vehiculo_id);
-        const tipo = tiposLocal.find((t: any) => t.id_tipo_vehiculo === v.tipo_vehiculo_id);
-        const sucursal = sucursalesLocal.find((s: any) => s.id_sucursal === v.sucursal_id);
-
-        return {
-          ...v,
-          modelo: modelo ? { ...modelo, marca: marca } : null,
-          tipo: tipo,
-          sucursal: sucursal,
-        };
-      });
-
-        vehiclesData = vehiculosEnriquecidos;
+      if (error) {
+        throw error;
       }
 
+      const vehiclesData = data ?? [];
       setVehicles(vehiclesData);
 
-      // Calcular estadísticas
       const stats = {
         enRuta: vehiclesData.filter((v: any) => v.estado_vehiculo === 'en_ruta').length,
         enTaller: vehiclesData.filter((v: any) => v.estado_vehiculo === 'en_taller').length,
@@ -979,6 +775,8 @@ const workOrdersCounts = {
       setVehicleStats(stats);
     } catch (error) {
       console.error('Error loading vehicles:', error);
+      setVehicles([]);
+      setVehicleStats({ enRuta: 0, enTaller: 0, enEspera: 0, fueraServicio: 0 });
     } finally {
       setLoading(false);
     }
@@ -986,53 +784,34 @@ const workOrdersCounts = {
 
   // Función para cargar órdenes de trabajo
   const loadWorkOrders = async () => {
+    if (!hasEnv) {
+      setWorkOrders([]);
+      setOrderStats({ programadas: 0, enDiagnostico: 0, enReparacion: 0, retrasadas: 0 });
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
-      let ordersData: any[] = [];
+      const { data, error } = await supabase
+        .from('orden_trabajo')
+        .select(`
+          *,
+          empleado:empleado_id(nombre, apellido_paterno),
+          vehiculo:vehiculo_id(patente_vehiculo)
+        `)
+        .order('fecha_inicio_ot', { ascending: false });
 
-      if (hasEnv) {
-        try {
-          const { data, error } = await supabase
-            .from('orden_trabajo')
-            .select(`
-              *,
-              empleado:empleado_id(nombre, apellido_paterno),
-              vehiculo:vehiculo_id(patente_vehiculo)
-            `)
-            .order('fecha_inicio_ot', { ascending: false });
-          
-          if (!error && data) {
-            ordersData = data;
-          }
-        } catch (err) {
-          console.error('Error cargando órdenes desde Supabase:', err);
-        }
-      } else {
-      const ordenesLocal = readLocal('apt_ordenes_trabajo', []);
-      const empleadosLocal = readLocal('apt_empleados', []);
-      const vehiculosLocal = readLocal('apt_vehiculos', []);
+      if (error) throw error;
 
-        ordersData = ordenesLocal.map((o: any) => {
-        const empleado = empleadosLocal.find((e: any) => e.id_empleado === o.empleado_id);
-        const vehiculo = vehiculosLocal.find((v: any) => v.id_vehiculo === o.vehiculo_id);
-
-        return {
-          ...o,
-          empleado: empleado,
-            vehiculo: vehiculo || (o.patente_vehiculo
-              ? { patente_vehiculo: o.patente_vehiculo }
-              : null),
-        };
-      });
-      }
-
+      const ordersData = data ?? [];
       const ordenesOrdenadas = ordersData
         .slice()
         .sort((a, b) => {
-        const fechaA = new Date(a.created_at || a.fecha_inicio_ot || 0).getTime();
-        const fechaB = new Date(b.created_at || b.fecha_inicio_ot || 0).getTime();
+          const fechaA = new Date(a.created_at || a.fecha_inicio_ot || 0).getTime();
+          const fechaB = new Date(b.created_at || b.fecha_inicio_ot || 0).getTime();
           return fechaB - fechaA;
-      });
+        });
 
       setWorkOrders(ordenesOrdenadas);
 
@@ -1051,55 +830,49 @@ const workOrdersCounts = {
       setOrderStats(stats);
     } catch (error) {
       console.error('Error loading work orders:', error);
+      setWorkOrders([]);
+      setOrderStats({ programadas: 0, enDiagnostico: 0, enReparacion: 0, retrasadas: 0 });
     } finally {
       setLoading(false);
     }
   };
 
   const loadReportOrders = async () => {
+    if (!hasEnv) {
+      setReportOrders([]);
+      setReportOrderStats({ enCurso: 0, finalizadas: 0, pendientesCierre: 0, cerradas: 0 });
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
-      let ordenesData: any[] = [];
+      const { data, error } = await supabase
+        .from('orden_trabajo')
+        .select(
+          `
+          id_orden_trabajo,
+          descripcion_ot,
+          estado_ot,
+          estado_cierre,
+          prioridad_ot,
+          fecha_inicio_ot,
+          fecha_cierre_ot,
+          fecha_cierre_tecnico,
+          detalle_reparacion,
+          vehiculo:vehiculo_id(patente_vehiculo),
+          solicitud:solicitud_diagnostico_id(
+            tipo_problema,
+            prioridad,
+            patente_vehiculo
+          )
+        `
+        )
+        .order('created_at', { ascending: false });
 
-      if (hasEnv) {
-        try {
-          const { data, error } = await supabase
-            .from('orden_trabajo')
-            .select(
-              `
-              id_orden_trabajo,
-              descripcion_ot,
-              estado_ot,
-              estado_cierre,
-              prioridad_ot,
-              fecha_inicio_ot,
-              fecha_cierre_ot,
-              fecha_cierre_tecnico,
-              detalle_reparacion,
-              vehiculo:vehiculo_id(patente_vehiculo),
-              solicitud:solicitud_diagnostico_id(
-                tipo_problema,
-                prioridad,
-                patente_vehiculo
-              )
-            `
-            )
-            .order('created_at', { ascending: false });
+      if (error) throw error;
 
-          if (!error && Array.isArray(data)) {
-            ordenesData = data;
-          }
-        } catch (error) {
-          console.error('⚠️ Error cargando reportes desde Supabase:', error);
-        }
-      }
-
-      if (!hasEnv || ordenesData.length === 0) {
-        const ordenesLocal = readLocal('apt_ordenes_trabajo', []);
-        ordenesData = Array.isArray(ordenesLocal) ? ordenesLocal : [];
-      }
-
-      const normalizadas = ordenesData.map((orden: any) => {
+      const normalizadas = (data ?? []).map((orden: any) => {
         const estadoCierre = (orden.estado_cierre || 'pendiente').toLowerCase();
         const estadoOT = (orden.estado_ot || '').toLowerCase();
         return {
@@ -1150,6 +923,7 @@ const workOrdersCounts = {
     } catch (error) {
       console.error('❌ Error cargando reportes de OT:', error);
       setReportOrders([]);
+      setReportOrderStats({ enCurso: 0, finalizadas: 0, pendientesCierre: 0, cerradas: 0 });
     } finally {
       setLoading(false);
     }

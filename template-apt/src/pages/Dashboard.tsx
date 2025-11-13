@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Users, Truck, FileText, AlertCircle, Clock, User, MapPin } from 'lucide-react';
 import Card from '../components/Card';
 import Table from '../components/Table';
@@ -18,6 +18,8 @@ export default function Dashboard() {
   const [driverHistory, setDriverHistory] = useState<any[]>([]);
   const [driverProfile, setDriverProfile] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const hasEnv = Boolean(import.meta.env.VITE_SUPABASE_URL) && Boolean(import.meta.env.VITE_SUPABASE_ANON_KEY);
 
   useEffect(() => {
     loadDashboardData();
@@ -41,6 +43,9 @@ export default function Dashboard() {
   }, [user]);
 
   const readLocal = (key: string, fallback: any) => {
+    if (hasEnv) {
+      return fallback;
+    }
     try {
       const raw = localStorage.getItem(key);
       return raw ? JSON.parse(raw) : fallback;
@@ -187,6 +192,14 @@ export default function Dashboard() {
     }
     return null;
   };
+
+  const sortedDriverHistory = useMemo(() => {
+    return [...driverHistory].sort((a, b) => {
+      const aDate = a?.fecha ? new Date(a.fecha).getTime() : 0;
+      const bDate = b?.fecha ? new Date(b.fecha).getTime() : 0;
+      return bDate - aDate;
+    });
+  }, [driverHistory]);
 
   const buildDriverHistory = (
     orders: any[],
@@ -800,7 +813,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {driverHistory.length === 0 ? (
+        {sortedDriverHistory.length === 0 ? (
           <div className="bg-white rounded-lg shadow-md p-8 text-center text-gray-500">
             <FileText className="mx-auto text-gray-300 mb-4" size={56} />
             <p>No tienes registros de horas agendadas todavía.</p>
@@ -808,7 +821,7 @@ export default function Dashboard() {
           </div>
         ) : (
           <div className="space-y-4">
-            {driverHistory.map((item) => (
+            {sortedDriverHistory.map((item) => (
               <div key={item.id} className="bg-white rounded-lg shadow-md p-5 border border-gray-200">
                 <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
                   <div>

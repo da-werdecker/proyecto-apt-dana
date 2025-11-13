@@ -52,16 +52,11 @@ export default function ScheduleDiagnostic() {
   const [assignedVehicles, setAssignedVehicles] = useState<any[]>([]);
   const [assignedVehiclesLoading, setAssignedVehiclesLoading] = useState(false);
 
-  const hasEnv = Boolean(import.meta.env.VITE_SUPABASE_URL) && Boolean(import.meta.env.VITE_SUPABASE_ANON_KEY);
+const hasEnv = Boolean(import.meta.env.VITE_SUPABASE_URL) && Boolean(import.meta.env.VITE_SUPABASE_ANON_KEY);
 
-  const readLocal = (key: string, fallback: any) => {
-    try {
-      const raw = localStorage.getItem(key);
-      return raw ? JSON.parse(raw) : fallback;
-    } catch {
-      return fallback;
-    }
-  };
+if (!hasEnv) {
+  console.error('Supabase no está configurado. Define VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY.');
+}
 
   const loadAssignedVehicles = async () => {
     if (!user || !hasEnv) {
@@ -122,53 +117,21 @@ export default function ScheduleDiagnostic() {
     }
   };
 
-  const writeLocal = (key: string, value: any) => {
-    try {
-      localStorage.setItem(key, JSON.stringify(value));
-      window.dispatchEvent(
-        new CustomEvent('apt-local-update', {
-          detail: { key },
-        })
-      );
-    } catch {}
-  };
+const appendDriverHistory = async (entry: any) => {
+  if (!entry.empleado_id) return;
 
-  const appendDriverHistory = async (entry: any) => {
-    if (hasEnv && entry.empleado_id) {
-      try {
-        await supabase.from('driver_history').insert({
-          empleado_id: entry.empleado_id || null,
-          solicitud_diagnostico_id: entry.solicitud_diagnostico_id || null,
-          vehiculo_id: entry.vehiculo_id || null,
-          descripcion: entry.estado_solicitud || 'pendiente_confirmacion',
-          metadata: entry,
-        });
-        const history = readLocal('apt_driver_history', []);
-        if (Array.isArray(history) && history.length > 0) {
-          const filtered = history.filter(
-            (item: any) =>
-              item.id !== entry.id &&
-              item.solicitud_diagnostico_id !== entry.solicitud_diagnostico_id
-          );
-          writeLocal('apt_driver_history', filtered);
-        }
-        return;
-      } catch (error) {
-        console.error('Error registrando driver history en Supabase:', error);
-        // Si falla el insert remoto, seguir con el guardado local como respaldo
-      }
-    }
+  const { error } = await supabase.from('driver_history').insert({
+    empleado_id: entry.empleado_id || null,
+    solicitud_diagnostico_id: entry.solicitud_diagnostico_id || null,
+    vehiculo_id: entry.vehiculo_id || null,
+    descripcion: entry.estado_solicitud || 'pendiente_confirmacion',
+    metadata: entry,
+  });
 
-    const history = readLocal('apt_driver_history', []);
-    const sanitized = Array.isArray(history)
-      ? history.filter(
-          (item: any) =>
-            item.id !== entry.id &&
-            item.solicitud_diagnostico_id !== entry.solicitud_diagnostico_id
-        )
-      : [];
-    writeLocal('apt_driver_history', [entry, ...sanitized]);
-  };
+  if (error) {
+    throw error;
+  }
+};
 
   const [formData, setFormData] = useState({
     patente_vehiculo: '',
@@ -219,44 +182,26 @@ export default function ScheduleDiagnostic() {
   const loadSolicitudes = async () => {
     try {
       setLoading(true);
-      let solicitudesData: any[] = [];
 
-      if (hasEnv) {
-        const { data, error } = await supabase
-          .from('solicitud_diagnostico')
-          .select('*')
-          .in('estado_solicitud', ['pendiente_confirmacion', 'confirmada'])
-          .order('fecha_solicitada', { ascending: true });
-        
-        if (!error && data) {
-          solicitudesData = data;
-        }
+      if (!hasEnv) {
+        setSolicitudes([]);
+        return;
       }
 
-      // También cargar de localStorage
-      const localSolicitudes = readLocal('apt_solicitudes_diagnostico', []);
-      const localFiltered = localSolicitudes.filter((s: any) => 
-        s.estado_solicitud === 'pendiente_confirmacion' || s.estado_solicitud === 'confirmada'
-      );
-      
-      // Combinar y eliminar duplicados
-      const allSolicitudes = [...solicitudesData, ...localFiltered];
-      const uniqueSolicitudes = allSolicitudes.filter((s, index, self) => 
-        index === self.findIndex((t) => t.id_solicitud_diagnostico === s.id_solicitud_diagnostico)
-      );
-      
-      setSolicitudes(uniqueSolicitudes);
+      const { data, error } = await supabase
+        .from('solicitud_diagnostico')
+        .select('*')
+        .in('estado_solicitud', ['pendiente_confirmacion', 'confirmada'])
+        .order('fecha_solicitada', { ascending: true });
+
+      if (error) {
+        throw error;
+      }
+
+      setSolicitudes(data ?? []);
     } catch (error) {
       console.error('Error loading solicitudes:', error);
-      if (!hasEnv) {
-        const localSolicitudes = readLocal('apt_solicitudes_diagnostico', []);
-        const localFiltered = localSolicitudes.filter((s: any) => 
-          s.estado_solicitud === 'pendiente_confirmacion' || s.estado_solicitud === 'confirmada'
-        );
-        setSolicitudes(localFiltered);
-      } else {
-        setSolicitudes([]);
-      }
+      setSolicitudes([]);
     } finally {
       setLoading(false);
     }
@@ -369,48 +314,24 @@ export default function ScheduleDiagnostic() {
     if (!user) return null;
 
     try {
-      if (hasEnv) {
-        const { data } = await supabase
-          .from('empleado')
-          .select('id_empleado')
-          .eq('usuario_id', user.id_usuario)
-          .maybeSingle();
-        
-        if (data) return data.id_empleado;
+      if (!hasEnv) {
+        throw new Error('Supabase no está configurado. No se puede obtener el id del empleado.');
       }
 
-      // Buscar en localStorage
-      const empleados = readLocal('apt_empleados', []);
-      let empleado = empleados.find((e: any) => e.usuario_id === user.id_usuario);
-      
-      // Si no encuentra empleado, crear uno temporal automáticamente
-      if (!empleado) {
-        const nuevoEmpleado = {
-          id_empleado: Date.now(),
-          nombre: user.usuario === 'chofer' ? 'Chofer' : user.usuario,
-          apellido_paterno: 'Demo',
-          apellido_materno: null,
-          rut: user.usuario,
-          email: null,
-          telefono1: null,
-          telefono2: null,
-          fecha_nacimiento: null,
-          cargo_id: 1, // Cargo por defecto
-          usuario_id: user.id_usuario,
-          created_at: new Date().toISOString(),
-        };
-        
-        empleados.push(nuevoEmpleado);
-        writeLocal('apt_empleados', empleados);
-        empleado = nuevoEmpleado;
-        console.log('✅ Empleado temporal creado para usuario:', user.usuario);
+      const { data, error } = await supabase
+        .from('empleado')
+        .select('id_empleado')
+        .eq('usuario_id', user.id_usuario)
+        .maybeSingle();
+
+      if (error) {
+        throw error;
       }
-      
-      return empleado?.id_empleado || null;
+
+      return data?.id_empleado ?? null;
     } catch (error) {
       console.error('Error getting employee ID:', error);
-      // Si todo falla, usar un ID temporal basado en el ID del usuario
-      return user.id_usuario < 0 ? user.id_usuario : -user.id_usuario;
+      return null;
     }
   };
 
@@ -420,6 +341,10 @@ export default function ScheduleDiagnostic() {
     setSaving(true);
 
     try {
+      if (!hasEnv) {
+        throw new Error('Supabase no está configurado. Define VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY.');
+      }
+
       const empleadoId = await getCurrentEmployeeId();
       
       if (!empleadoId) {
@@ -441,7 +366,7 @@ export default function ScheduleDiagnostic() {
         return;
       }
 
-      if (hasEnv && assignedVehicles.length === 0) {
+      if (assignedVehicles.length === 0) {
         setError('No tienes vehículos asignados. Contacta al coordinador.');
         setSaving(false);
         return;
@@ -465,151 +390,64 @@ export default function ScheduleDiagnostic() {
       let vehiculoId: number | null = null;
       let storedSolicitud: any = null;
       
-      if (hasEnv) {
-        const vehiculoAsignado = assignedVehicles.find(
-          (asignacion) =>
-            asignacion?.vehiculo?.patente_vehiculo?.toUpperCase?.() === patenteNormalizada
-        );
+      const vehiculoAsignado = assignedVehicles.find(
+        (asignacion) =>
+          asignacion?.vehiculo?.patente_vehiculo?.toUpperCase?.() === patenteNormalizada
+      );
 
-        vehiculoId = vehiculoAsignado?.vehiculo?.id_vehiculo || null;
+      vehiculoId = vehiculoAsignado?.vehiculo?.id_vehiculo || null;
 
-        if (!vehiculoId) {
-          setError('Selecciona un vehículo válido de tu lista asignada.');
-          setSaving(false);
-          return;
-        }
-        
-        const solicitudDB = {
+      if (!vehiculoId) {
+        setError('Selecciona un vehículo válido de tu lista asignada.');
+        setSaving(false);
+        return;
+      }
+      
+      const solicitudDB = {
+        ...solicitud,
+        vehiculo_id: vehiculoId,
+        patente_vehiculo: patenteNormalizada,
+      };
+      const { data: insertedSolicitud, error: dbError } = await supabase
+        .from('solicitud_diagnostico')
+        .insert([solicitudDB])
+        .select()
+        .single();
+
+      if (dbError) {
+        throw dbError;
+      } else if (insertedSolicitud) {
+        storedSolicitud = {
           ...solicitud,
-          vehiculo_id: vehiculoId,
+          ...insertedSolicitud,
           patente_vehiculo: patenteNormalizada,
+          bloque_horario_confirmado: insertedSolicitud.bloque_horario_confirmado || solicitud.bloque_horario,
+          fecha_confirmada: insertedSolicitud.fecha_confirmada || solicitud.fecha_solicitada,
+          empleado_id: insertedSolicitud.empleado_id || empleadoId,
         };
-        const { data: insertedSolicitud, error: dbError } = await supabase
-          .from('solicitud_diagnostico')
-          .insert([solicitudDB])
-          .select()
-          .single();
-
-        if (dbError) {
-          // Si falla, guardar localmente
-          const vehiculos = readLocal('apt_vehiculos', []);
-          let vehiculoExistente = vehiculos.find((v: any) => 
-            v.patente_vehiculo?.toUpperCase() === patenteNormalizada
-          );
-          
-          if (!vehiculoExistente) {
-            const modelos = readLocal('apt_modelos', []);
-            const tipos = readLocal('apt_tipos', []);
-            const sucursales = readLocal('apt_sucursales', []);
-
-            const nuevoVehiculo = {
-              id_vehiculo: Date.now(),
-              patente_vehiculo: patenteNormalizada,
-              estado_vehiculo: 'disponible',
-              modelo_vehiculo_id: modelos[0]?.id_modelo_vehiculo || -1,
-              tipo_vehiculo_id: tipos[0]?.id_tipo_vehiculo || -1,
-              sucursal_id: sucursales[0]?.id_sucursal || -1,
-              created_at: new Date().toISOString(),
-            };
-
-            vehiculos.push(nuevoVehiculo);
-            writeLocal('apt_vehiculos', vehiculos);
-            vehiculoId = nuevoVehiculo.id_vehiculo;
-            console.log('✅ Vehículo creado automáticamente en localStorage:', patenteNormalizada);
-          } else {
-            vehiculoId = vehiculoExistente.id_vehiculo;
-          }
-
-          const solicitudes = readLocal('apt_solicitudes_diagnostico', []);
-          const nuevaSolicitud = {
-            id_solicitud_diagnostico: Date.now(),
-            ...solicitud,
-            vehiculo_id: vehiculoId,
-            created_at: new Date().toISOString(),
-          };
-          const solicitudesActualizadas = [nuevaSolicitud, ...solicitudes];
-          writeLocal('apt_solicitudes_diagnostico', solicitudesActualizadas);
-          console.log('✅ Solicitud guardada localmente:', nuevaSolicitud);
-          console.log('📦 Total de solicitudes guardadas:', solicitudesActualizadas.length);
-          console.log('📦 Todas las solicitudes:', solicitudesActualizadas);
-          storedSolicitud = nuevaSolicitud;
-        } else if (insertedSolicitud) {
-          storedSolicitud = {
-            ...solicitud,
-            ...insertedSolicitud,
-            patente_vehiculo: patenteNormalizada,
-            bloque_horario_confirmado: insertedSolicitud.bloque_horario_confirmado || solicitud.bloque_horario,
-            fecha_confirmada: insertedSolicitud.fecha_confirmada || solicitud.fecha_solicitada,
-            empleado_id: insertedSolicitud.empleado_id || empleadoId,
-          };
-        }
-
-      } else {
-        // Guardar localmente (modo demo sin Supabase)
-        const vehiculos = readLocal('apt_vehiculos', []);
-        let vehiculoExistente = vehiculos.find((v: any) =>
-          v.patente_vehiculo?.toUpperCase() === patenteNormalizada
-        );
-
-        if (!vehiculoExistente) {
-          const modelos = readLocal('apt_modelos', []);
-          const tipos = readLocal('apt_tipos', []);
-          const sucursales = readLocal('apt_sucursales', []);
-
-          const nuevoVehiculo = {
-            id_vehiculo: Date.now(),
-            patente_vehiculo: patenteNormalizada,
-            estado_vehiculo: 'disponible',
-            modelo_vehiculo_id: modelos[0]?.id_modelo_vehiculo || -1,
-            tipo_vehiculo_id: tipos[0]?.id_tipo_vehiculo || -1,
-            sucursal_id: sucursales[0]?.id_sucursal || -1,
-            created_at: new Date().toISOString(),
-          };
-
-          vehiculos.push(nuevoVehiculo);
-          writeLocal('apt_vehiculos', vehiculos);
-          vehiculoId = nuevoVehiculo.id_vehiculo;
-          console.log('✅ Vehículo creado automáticamente en localStorage:', patenteNormalizada);
-        } else {
-          vehiculoId = vehiculoExistente.id_vehiculo;
-        }
-
-        const solicitudes = readLocal('apt_solicitudes_diagnostico', []);
-        const nuevaSolicitud = {
-          id_solicitud_diagnostico: Date.now(),
-          ...solicitud,
-          vehiculo_id: vehiculoId,
-          created_at: new Date().toISOString(),
-        };
-        const solicitudesActualizadas = [nuevaSolicitud, ...solicitudes];
-        writeLocal('apt_solicitudes_diagnostico', solicitudesActualizadas);
-        console.log('✅ Solicitud guardada localmente:', nuevaSolicitud);
-        console.log('📦 Total de solicitudes guardadas:', solicitudesActualizadas.length);
-        console.log('📦 Todas las solicitudes:', solicitudesActualizadas);
-        storedSolicitud = nuevaSolicitud;
       }
 
       if (!storedSolicitud) {
-        storedSolicitud = {
-          id_solicitud_diagnostico: Date.now(),
-          ...solicitud,
-          vehiculo_id: vehiculoId,
-          created_at: new Date().toISOString(),
-        };
+        throw new Error('No se pudo registrar la solicitud en la base de datos.');
       }
 
-      await appendDriverHistory({
-        id: storedSolicitud.id_solicitud_diagnostico || Date.now(),
-        solicitud_diagnostico_id: storedSolicitud.id_solicitud_diagnostico || null,
-        patente_vehiculo: storedSolicitud.patente_vehiculo || patenteNormalizada,
-        tipo_problema: storedSolicitud.tipo_problema,
-        fecha_programada: storedSolicitud.fecha_confirmada || storedSolicitud.fecha_solicitada || formData.fecha_solicitada,
-        bloque_horario: storedSolicitud.bloque_horario_confirmado || storedSolicitud.bloque_horario || formData.bloque_horario,
-        estado_solicitud: storedSolicitud.estado_solicitud || 'pendiente_confirmacion',
-        empleado_id: storedSolicitud.empleado_id,
-        vehiculo_id: storedSolicitud.vehiculo_id || vehiculoId,
-        created_at: storedSolicitud.created_at || new Date().toISOString(),
-      });
+      try {
+        await appendDriverHistory({
+          id: storedSolicitud.id_solicitud_diagnostico || Date.now(),
+          solicitud_diagnostico_id: storedSolicitud.id_solicitud_diagnostico || null,
+          patente_vehiculo: storedSolicitud.patente_vehiculo || patenteNormalizada,
+          tipo_problema: storedSolicitud.tipo_problema,
+          fecha_programada: storedSolicitud.fecha_confirmada || storedSolicitud.fecha_solicitada || formData.fecha_solicitada,
+          bloque_horario: storedSolicitud.bloque_horario_confirmado || storedSolicitud.bloque_horario || formData.bloque_horario,
+          estado_solicitud: storedSolicitud.estado_solicitud || 'pendiente_confirmacion',
+          empleado_id: storedSolicitud.empleado_id,
+          vehiculo_id: storedSolicitud.vehiculo_id || vehiculoId,
+          created_at: storedSolicitud.created_at || new Date().toISOString(),
+        });
+      } catch (historyError) {
+        console.warn('No se pudo registrar en driver_history:', historyError);
+        // No interrumpir el flujo principal: la solicitud ya se creó.
+      }
 
       // Recargar solicitudes para actualizar disponibilidad
       await loadSolicitudes();
@@ -620,7 +458,7 @@ export default function ScheduleDiagnostic() {
       setSuccess(true);
       
       // Reset form
-      const patenteDefault = hasEnv ? assignedVehicles[0]?.vehiculo?.patente_vehiculo || '' : '';
+      const patenteDefault = assignedVehicles[0]?.vehiculo?.patente_vehiculo || '';
       setFormData({
         patente_vehiculo: patenteDefault,
         tipo_problema: '',
@@ -664,6 +502,18 @@ export default function ScheduleDiagnostic() {
     const months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
     return `${days[date.getDay()]} ${date.getDate()} de ${months[date.getMonth()]}`;
   };
+
+  if (!hasEnv) {
+    return (
+      <div className="space-y-4 bg-white rounded-lg shadow-md p-6">
+        <h1 className="text-2xl font-bold text-gray-900">Agendar Diagnóstico</h1>
+        <p className="text-gray-600">
+          Para agendar horas debes configurar las variables de entorno <code>VITE_SUPABASE_URL</code> y{' '}
+          <code>VITE_SUPABASE_ANON_KEY</code> y luego reiniciar <code>npm run dev</code>. Actualmente la aplicación está en modo offline y no puede registrar solicitudes.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

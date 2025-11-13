@@ -95,9 +95,10 @@ interface ChecklistDiagnosticoProps {
   onSave: (checklistData: ChecklistData) => void;
   onCancel: () => void;
   initialData?: Partial<ChecklistData>;
+  readOnly?: boolean;
 }
 
-export default function ChecklistDiagnostico({ ordenTrabajo, onSave, onCancel, initialData = {} }: ChecklistDiagnosticoProps) {
+export default function ChecklistDiagnostico({ ordenTrabajo, onSave, onCancel, initialData = {}, readOnly = false }: ChecklistDiagnosticoProps) {
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['datos-generales']));
   const [formData, setFormData] = useState<ChecklistData>({
     patente: initialData.patente || ordenTrabajo.patente_vehiculo || '',
@@ -177,6 +178,11 @@ export default function ChecklistDiagnostico({ ordenTrabajo, onSave, onCancel, i
     setExpandedSections(newExpanded);
   };
 
+  const updateField = (fieldName: keyof ChecklistData, value: string) => {
+    if (readOnly) return;
+    setFormData((prev) => ({ ...prev, [fieldName]: value }));
+  };
+
   const renderSection = (sectionId: string, title: string, content: React.ReactNode) => {
     const isExpanded = expandedSections.has(sectionId);
     return (
@@ -203,13 +209,17 @@ export default function ChecklistDiagnostico({ ordenTrabajo, onSave, onCancel, i
     fieldName: keyof ChecklistData,
     options: { value: string; label: string }[]
   ) => {
+    const baseClasses = `w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
+      readOnly ? 'bg-gray-100 text-gray-500 cursor-not-allowed border-gray-200' : 'border-gray-300'
+    }`;
     return (
       <div className="mb-4">
         <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
         <select
           value={formData[fieldName]}
-          onChange={(e) => setFormData({ ...formData, [fieldName]: e.target.value })}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+          onChange={(e) => updateField(fieldName, e.target.value)}
+          disabled={readOnly}
+          className={baseClasses}
         >
           {options.map((opt) => (
             <option key={opt.value} value={opt.value}>
@@ -222,30 +232,38 @@ export default function ChecklistDiagnostico({ ordenTrabajo, onSave, onCancel, i
   };
 
   const renderTextArea = (label: string, fieldName: keyof ChecklistData, placeholder?: string) => {
+    const baseClasses = `w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
+      readOnly ? 'bg-gray-100 text-gray-500 cursor-not-allowed border-gray-200' : 'border-gray-300'
+    }`;
     return (
       <div className="mb-4">
         <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
         <textarea
           value={formData[fieldName]}
-          onChange={(e) => setFormData({ ...formData, [fieldName]: e.target.value })}
+          onChange={(e) => updateField(fieldName, e.target.value)}
           placeholder={placeholder}
           rows={3}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+          disabled={readOnly}
+          className={baseClasses}
         />
       </div>
     );
   };
 
   const renderInput = (label: string, fieldName: keyof ChecklistData, type: string = 'text', placeholder?: string) => {
+    const baseClasses = `w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
+      readOnly ? 'bg-gray-100 text-gray-500 cursor-not-allowed border-gray-200' : 'border-gray-300'
+    }`;
     return (
       <div className="mb-4">
         <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
         <input
           type={type}
           value={formData[fieldName]}
-          onChange={(e) => setFormData({ ...formData, [fieldName]: e.target.value })}
+          onChange={(e) => updateField(fieldName, e.target.value)}
           placeholder={placeholder}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+          disabled={readOnly}
+          className={baseClasses}
         />
       </div>
     );
@@ -604,19 +622,22 @@ export default function ChecklistDiagnostico({ ordenTrabajo, onSave, onCancel, i
           onClick={onCancel}
           className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
         >
-          Cancelar
+          {readOnly ? 'Cerrar' : 'Cancelar'}
         </button>
-        <button
-          type="button"
-          onClick={() => onSave(formData)}
-          className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-        >
-          Guardar Checklist
-        </button>
+        {!readOnly && (
+          <button
+            type="button"
+            onClick={() => onSave(formData)}
+            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            Guardar Checklist
+          </button>
+        )}
       </div>
     </div>
   );
 }
+
 
 
 
