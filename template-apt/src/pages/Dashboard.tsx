@@ -169,6 +169,25 @@ export default function Dashboard() {
     });
   };
 
+  const sanitizeValue = (value?: string | null) => {
+    if (value === undefined || value === null) return null;
+    const text = String(value).trim();
+    if (!text) return null;
+    const lower = text.toLowerCase();
+    if (lower === 'n/a' || lower === 'na' || lower === 'sin dato' || lower === 'null') {
+      return null;
+    }
+    return text;
+  };
+
+  const preferValues = (...values: (string | null | undefined)[]) => {
+    for (const value of values) {
+      const sanitized = sanitizeValue(value);
+      if (sanitized) return sanitized;
+    }
+    return null;
+  };
+
   const buildDriverHistory = (
     orders: any[],
     empleadoId?: number | null,
@@ -263,21 +282,23 @@ export default function Dashboard() {
         null;
 
       const patente =
-        orden.patente_vehiculo ||
-        solicitud?.patente_vehiculo ||
-        solicitud?.vehiculo?.patente_vehiculo ||
-        ordenLocal?.patente_vehiculo ||
-        citaGuardada?.patente ||
-        'Sin patente';
+        preferValues(
+          orden.patente_vehiculo,
+          solicitud?.patente_vehiculo,
+          solicitud?.vehiculo?.patente_vehiculo,
+          ordenLocal?.patente_vehiculo,
+          citaGuardada?.patente
+        ) || 'Sin patente';
 
       const problema =
-        orden.tipo_problema ||
-        solicitud?.tipo_problema ||
-        solicitud?.descripcion_problema ||
-        solicitud?.motivo_consulta ||
-        ordenLocal?.tipo_problema ||
-        orden.descripcion_ot ||
-        'Diagnóstico solicitado';
+        preferValues(
+          orden.tipo_problema,
+          solicitud?.tipo_problema,
+          solicitud?.descripcion_problema,
+          solicitud?.motivo_consulta,
+          ordenLocal?.tipo_problema,
+          orden.descripcion_ot
+        ) || 'Diagnóstico solicitado';
 
       return {
         id: orden.id_orden_trabajo,
@@ -319,15 +340,17 @@ export default function Dashboard() {
             : 'bg-gray-100 text-gray-500 border border-gray-200';
 
         const patente =
-          solicitud.patente_vehiculo ||
-          solicitud.vehiculo?.patente_vehiculo ||
-          'Sin patente';
+          preferValues(
+            solicitud.patente_vehiculo,
+            solicitud.vehiculo?.patente_vehiculo
+          ) || 'Sin patente';
 
         const problema =
-          solicitud.tipo_problema ||
-          solicitud.descripcion_problema ||
-          solicitud.motivo_consulta ||
-          'Diagnóstico solicitado';
+          preferValues(
+            solicitud.tipo_problema,
+            solicitud.descripcion_problema,
+            solicitud.motivo_consulta
+          ) || 'Diagnóstico solicitado';
 
         return {
           id: solicitud.id_solicitud_diagnostico || solicitud.id,

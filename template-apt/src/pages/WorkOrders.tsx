@@ -200,10 +200,27 @@ export default function WorkOrders() {
 
           return {
             ...orden,
-            patente_vehiculo: orden.patente_vehiculo || solicitud?.patente_vehiculo || 'N/A',
-            bloque_horario: orden.hora_confirmada || solicitud?.bloque_horario_confirmado || solicitud?.bloque_horario || 'N/A',
-            tipo_problema: solicitud?.tipo_problema || orden.tipo_problema || 'Diagnóstico',
-            tipo_trabajo: solicitud?.tipo_trabajo || orden.tipo_trabajo || 'N/A',
+            patente_vehiculo:
+              preferValues(
+                orden.patente_vehiculo,
+                solicitud?.patente_vehiculo
+              ) || 'Sin patente',
+            bloque_horario:
+              preferValues(
+                orden.hora_confirmada,
+                solicitud?.bloque_horario_confirmado,
+                solicitud?.bloque_horario
+              ) || 'Sin horario',
+            tipo_problema:
+              preferValues(
+                solicitud?.tipo_problema,
+                orden.tipo_problema
+              ) || 'Diagnóstico',
+            tipo_trabajo:
+              preferValues(
+                solicitud?.tipo_trabajo,
+                orden.tipo_trabajo
+              ) || 'No definido',
             empleado: orden.empleado || (empleado ? {
               nombre: empleado.nombre,
               apellido_paterno: empleado.apellido_paterno,
@@ -632,6 +649,25 @@ export default function WorkOrders() {
     });
   }
 
+  const sanitizeValue = (value?: string | null) => {
+    if (value === undefined || value === null) return null;
+    const text = String(value).trim();
+    if (!text) return null;
+    const lower = text.toLowerCase();
+    if (lower === 'n/a' || lower === 'na' || lower === 'sin dato' || lower === 'null') {
+      return null;
+    }
+    return text;
+  };
+
+  const preferValues = (...values: (string | null | undefined)[]) => {
+    for (const value of values) {
+      const sanitized = sanitizeValue(value);
+      if (sanitized) return sanitized;
+    }
+    return null;
+  };
+
   function buildDriverHistory(orders: any[], solicitudesFuente: any[], ordenesFallback: any[]): any[] {
     const solicitudesLS = Array.isArray(solicitudesFuente) ? solicitudesFuente : [];
     const ordenesLS = Array.isArray(ordenesFallback) ? ordenesFallback : [];
@@ -686,20 +722,22 @@ export default function WorkOrders() {
         null;
 
       const patente =
-        orden.patente_vehiculo ||
-        solicitud?.patente_vehiculo ||
-        solicitud?.vehiculo?.patente_vehiculo ||
-        ordenLocal?.patente_vehiculo ||
-        'Sin patente';
+        preferValues(
+          orden.patente_vehiculo,
+          solicitud?.patente_vehiculo,
+          solicitud?.vehiculo?.patente_vehiculo,
+          ordenLocal?.patente_vehiculo
+        ) || 'Sin patente';
 
       const problema =
-        orden.tipo_problema ||
-        solicitud?.tipo_problema ||
-        solicitud?.descripcion_problema ||
-        solicitud?.motivo_consulta ||
-        ordenLocal?.tipo_problema ||
-        orden.descripcion_ot ||
-        'Diagnóstico solicitado';
+        preferValues(
+          orden.tipo_problema,
+          solicitud?.tipo_problema,
+          solicitud?.descripcion_problema,
+          solicitud?.motivo_consulta,
+          ordenLocal?.tipo_problema,
+          orden.descripcion_ot
+        ) || 'Diagnóstico solicitado';
 
       return {
         id: orden.id_orden_trabajo,
@@ -838,6 +876,17 @@ export default function WorkOrders() {
               };
 
               const statusBadge = getStatusBadge();
+              const patenteDisplay =
+                preferValues(
+                  orden.patente_vehiculo,
+                  orden.vehiculo?.patente_vehiculo,
+                  orden.patente
+                ) || 'Sin patente';
+              const problemaDisplay =
+                preferValues(
+                  orden.tipo_problema,
+                  orden.problema
+                ) || 'Diagnóstico solicitado';
               const borderColor = getBorderColor();
 
               return (
@@ -850,9 +899,7 @@ export default function WorkOrders() {
                       <div className="flex items-center gap-3 mb-3">
                         <div className="flex items-center gap-2">
                           <Truck className={orden.estado_ot === 'en_diagnostico_programado' ? 'text-green-600' : 'text-gray-600'} size={20} />
-                          <span className="font-semibold text-gray-900">
-                            {orden.patente_vehiculo || orden.vehiculo?.patente_vehiculo || orden.vehiculo?.patente_vehiculo || 'N/A'}
-                          </span>
+                          <span className="font-semibold text-gray-900">{patenteDisplay}</span>
                         </div>
                         <span className={`px-3 py-1 ${statusBadge.color} rounded-full text-xs font-semibold`}>
                           {statusBadge.label}
@@ -872,7 +919,7 @@ export default function WorkOrders() {
                           <div className="flex items-center gap-2 text-sm">
                             <AlertCircle className="text-gray-400" size={16} />
                             <span className="text-gray-700">
-                              <strong>Problema:</strong> {orden.tipo_problema}
+                              <strong>Problema:</strong> {problemaDisplay}
                             </span>
                           </div>
                         )}
