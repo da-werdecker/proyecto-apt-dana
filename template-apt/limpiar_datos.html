@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Limpiar Datos del Sistema</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+        .warning {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        .success {
+            background: #d4edda;
+            border: 1px solid #28a745;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+            display: none;
+        }
+        button {
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background: #c82333;
+        }
+        button.safe {
+            background: #28a745;
+        }
+        button.safe:hover {
+            background: #218838;
+        }
+        .info-box {
+            background: #e7f3ff;
+            border: 1px solid #2196F3;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        .data-preview {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .item {
+            padding: 10px;
+            margin: 5px 0;
+            background: white;
+            border-left: 4px solid #007bff;
+        }
+        .item.bad {
+            border-left-color: #dc3545;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧹 Limpiar Datos del Sistema APT</h1>
+        <p>Esta herramienta te ayudará a limpiar los datos de prueba del sistema.</p>
+
+        <div class="info-box">
+            <h3>📊 Datos actuales en el sistema:</h3>
+            <div id="stats"></div>
+        </div>
+
+        <div class="data-preview">
+            <h3>🚗 Solicitudes y Órdenes de Trabajo:</h3>
+            <div id="preview"></div>
+        </div>
+
+        <div class="warning">
+            <strong>⚠️ ATENCIÓN:</strong> Esta acción eliminará TODAS las solicitudes de diagnóstico y órdenes de trabajo. Los usuarios, empleados y vehículos NO se eliminarán.
+        </div>
+
+        <button onclick="limpiarSolicitudesYOrdenes()">
+            🗑️ Limpiar Solicitudes y Órdenes
+        </button>
+
+        <button class="safe" onclick="limpiarSoloPatentesProblematicas()">
+            🎯 Limpiar Solo Patentes Problemáticas (CACA, PENE, etc.)
+        </button>
+
+        <button class="safe" onclick="location.reload()">
+            🔄 Actualizar Vista
+        </button>
+
+        <button class="safe" onclick="window.location.href='/'">
+            ← Volver al Sistema
+        </button>
+
+        <div id="success" class="success"></div>
+    </div>
+
+    <script>
+        function readLocal(key) {
+            try {
+                return JSON.parse(localStorage.getItem(key) || '[]');
+            } catch {
+                return [];
+            }
+        }
+
+        function writeLocal(key, value) {
+            localStorage.setItem(key, JSON.stringify(value));
+        }
+
+        function mostrarDatos() {
+            const solicitudes = readLocal('apt_solicitudes_diagnostico');
+            const ordenes = readLocal('apt_ordenes_trabajo');
+            const historialAutorizados = readLocal('apt_historial_autorizados');
+            const historialSalidas = readLocal('apt_historial_salidas');
+
+            // Estadísticas
+            document.getElementById('stats').innerHTML = `
+                <p><strong>Solicitudes de diagnóstico:</strong> ${solicitudes.length}</p>
+                <p><strong>Órdenes de trabajo:</strong> ${ordenes.length}</p>
+                <p><strong>Historial de autorizados:</strong> ${historialAutorizados.length}</p>
+                <p><strong>Historial de salidas:</strong> ${historialSalidas.length}</p>
+            `;
+
+            // Preview
+            let preview = '<h4>Solicitudes:</h4>';
+            solicitudes.forEach(s => {
+                const esProblematica = ['CACA', 'PENE', 'TEST', 'PRUEBA'].some(p => 
+                    s.patente_vehiculo?.toUpperCase().includes(p)
+                );
+                preview += `
+                    <div class="item ${esProblematica ? 'bad' : ''}">
+                        <strong>Patente:</strong> ${s.patente_vehiculo || 'N/A'} | 
+                        <strong>Problema:</strong> ${s.tipo_problema || 'N/A'} | 
+                        <strong>Estado:</strong> ${s.estado_solicitud || 'N/A'} |
+                        <strong>Fecha:</strong> ${s.fecha_solicitada || 'N/A'}
+                    </div>
+                `;
+            });
+
+            preview += '<h4 style="margin-top: 20px;">Órdenes de Trabajo:</h4>';
+            ordenes.forEach(o => {
+                const esProblematica = ['CACA', 'PENE', 'TEST', 'PRUEBA'].some(p => 
+                    o.patente_vehiculo?.toUpperCase().includes(p)
+                );
+                preview += `
+                    <div class="item ${esProblematica ? 'bad' : ''}">
+                        <strong>OT #${o.id_orden_trabajo}</strong> | 
+                        <strong>Patente:</strong> ${o.patente_vehiculo || 'N/A'} | 
+                        <strong>Estado:</strong> ${o.estado_ot || 'N/A'} |
+                        <strong>Fecha inicio:</strong> ${o.fecha_inicio_ot || 'N/A'}
+                    </div>
+                `;
+            });
+
+            document.getElementById('preview').innerHTML = preview;
+        }
+
+        function limpiarSolicitudesYOrdenes() {
+            if (!confirm('¿Estás seguro de eliminar TODAS las solicitudes y órdenes de trabajo? Esta acción NO se puede deshacer.')) {
+                return;
+            }
+
+            writeLocal('apt_solicitudes_diagnostico', []);
+            writeLocal('apt_ordenes_trabajo', []);
+            writeLocal('apt_historial_autorizados', []);
+            writeLocal('apt_historial_salidas', []);
+            writeLocal('apt_registros_ingreso', []);
+            writeLocal('apt_registros_salida', []);
+            writeLocal('apt_checklists_diagnostico', []);
+
+            document.getElementById('success').innerHTML = '✅ Todos los datos han sido eliminados exitosamente.';
+            document.getElementById('success').style.display = 'block';
+
+            setTimeout(() => {
+                location.reload();
+            }, 2000);
+        }
+
+        function limpiarSoloPatentesProblematicas() {
+            const patentesProblematicas = ['CACA', 'PENE', 'TEST', 'PRUEBA', 'XXX', 'DEMO'];
+            
+            if (!confirm('¿Eliminar solo las solicitudes/órdenes con patentes problemáticas (CACA, PENE, TEST, etc.)?')) {
+                return;
+            }
+
+            let solicitudes = readLocal('apt_solicitudes_diagnostico');
+            let ordenes = readLocal('apt_ordenes_trabajo');
+            let historialAutorizados = readLocal('apt_historial_autorizados');
+            let historialSalidas = readLocal('apt_historial_salidas');
+
+            const solicitudesAntes = solicitudes.length;
+            const ordenesAntes = ordenes.length;
+
+            // Filtrar solicitudes
+            solicitudes = solicitudes.filter(s => {
+                const patente = s.patente_vehiculo?.toUpperCase() || '';
+                return !patentesProblematicas.some(p => patente.includes(p));
+            });
+
+            // Filtrar órdenes
+            ordenes = ordenes.filter(o => {
+                const patente = o.patente_vehiculo?.toUpperCase() || '';
+                return !patentesProblematicas.some(p => patente.includes(p));
+            });
+
+            // Filtrar historiales
+            historialAutorizados = historialAutorizados.filter(h => {
+                const patente = h.patente?.toUpperCase() || '';
+                return !patentesProblematicas.some(p => patente.includes(p));
+            });
+
+            historialSalidas = historialSalidas.filter(h => {
+                const patente = h.patente?.toUpperCase() || '';
+                return !patentesProblematicas.some(p => patente.includes(p));
+            });
+
+            // Guardar
+            writeLocal('apt_solicitudes_diagnostico', solicitudes);
+            writeLocal('apt_ordenes_trabajo', ordenes);
+            writeLocal('apt_historial_autorizados', historialAutorizados);
+            writeLocal('apt_historial_salidas', historialSalidas);
+
+            const eliminadas = (solicitudesAntes - solicitudes.length) + (ordenesAntes - ordenes.length);
+
+            document.getElementById('success').innerHTML = `✅ Se eliminaron ${eliminadas} registros con patentes problemáticas.`;
+            document.getElementById('success').style.display = 'block';
+
+            setTimeout(() => {
+                location.reload();
+            }, 2000);
+        }
+
+        // Cargar datos al inicio
+        mostrarDatos();
+        
+        // Limpiar automáticamente al cargar
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                const patentesProblematicas = ['CACA', 'PENE', 'TEST', 'PRUEBA', 'XXX', 'DEMO'];
+                
+                let solicitudes = readLocal('apt_solicitudes_diagnostico');
+                let ordenes = readLocal('apt_ordenes_trabajo');
+                let historialAutorizados = readLocal('apt_historial_autorizados');
+                let historialSalidas = readLocal('apt_historial_salidas');
+
+                const solicitudesAntes = solicitudes.length;
+                const ordenesAntes = ordenes.length;
+
+                // Filtrar solicitudes
+                solicitudes = solicitudes.filter(s => {
+                    const patente = s.patente_vehiculo?.toUpperCase() || '';
+                    return !patentesProblematicas.some(p => patente.includes(p));
+                });
+
+                // Filtrar órdenes
+                ordenes = ordenes.filter(o => {
+                    const patente = o.patente_vehiculo?.toUpperCase() || '';
+                    return !patentesProblematicas.some(p => patente.includes(p));
+                });
+
+                // Filtrar historiales
+                historialAutorizados = historialAutorizados.filter(h => {
+                    const patente = h.patente?.toUpperCase() || '';
+                    return !patentesProblematicas.some(p => patente.includes(p));
+                });
+
+                historialSalidas = historialSalidas.filter(h => {
+                    const patente = h.patente?.toUpperCase() || '';
+                    return !patentesProblematicas.some(p => patente.includes(p));
+                });
+
+                const eliminadas = (solicitudesAntes - solicitudes.length) + (ordenesAntes - ordenes.length);
+
+                if (eliminadas > 0) {
+                    // Guardar
+                    writeLocal('apt_solicitudes_diagnostico', solicitudes);
+                    writeLocal('apt_ordenes_trabajo', ordenes);
+                    writeLocal('apt_historial_autorizados', historialAutorizados);
+                    writeLocal('apt_historial_salidas', historialSalidas);
+
+                    document.getElementById('success').innerHTML = `✅ Se eliminaron automáticamente ${eliminadas} registros con patentes problemáticas (CACA, PENE, etc.).`;
+                    document.getElementById('success').style.display = 'block';
+
+                    setTimeout(() => {
+                        mostrarDatos();
+                    }, 1000);
+                } else {
+                    document.getElementById('success').innerHTML = `✅ No se encontraron patentes problemáticas. Todo está limpio.`;
+                    document.getElementById('success').style.display = 'block';
+                }
+            }, 500);
+        });
+    </script>
+</body>
+</html>
+

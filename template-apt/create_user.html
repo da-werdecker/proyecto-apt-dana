@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Crear Usuario</title>
+</head>
+<body>
+    <h1>Creando usuario...</h1>
+    <script>
+        // Crear empleado
+        const empleados = JSON.parse(localStorage.getItem('apt_empleados') || '[]');
+        const usuarios = JSON.parse(localStorage.getItem('apt_usuarios') || '[]');
+        
+        // Verificar si ya existe
+        const rutBuscado = '21.313.407-8';
+        let empleadoExistente = empleados.find(e => e.rut_empleado === rutBuscado);
+        
+        if (!empleadoExistente) {
+            // Crear nuevo empleado
+            const nuevoEmpleado = {
+                id_empleado: Date.now(),
+                nombre: 'Carolina',
+                apellido_paterno: 'Soto',
+                apellido_materno: 'Gaete',
+                rut_empleado: rutBuscado,
+                correo_empleado: 'carolina.soto@ejemplo.cl',
+                telefono_empleado: '+56912345678',
+                cargo_id: 1,
+                usuario_id: null, // Se asignará después
+                created_at: new Date().toISOString()
+            };
+            
+            // Crear nuevo usuario
+            const nuevoUsuario = {
+                id_usuario: Date.now() + 1,
+                usuario: 'carolina.soto',
+                clave: '1234567',
+                rol: 'driver',
+                estado_usuario: true,
+                created_at: new Date().toISOString()
+            };
+            
+            // Asociar
+            nuevoEmpleado.usuario_id = nuevoUsuario.id_usuario;
+            
+            // Guardar
+            empleados.push(nuevoEmpleado);
+            usuarios.push(nuevoUsuario);
+            
+            localStorage.setItem('apt_empleados', JSON.stringify(empleados));
+            localStorage.setItem('apt_usuarios', JSON.stringify(usuarios));
+            
+            document.body.innerHTML = `
+                <h1 style="color: green;">✅ Usuario creado exitosamente</h1>
+                <h2>Datos de acceso:</h2>
+                <p><strong>Usuario:</strong> carolina.soto</p>
+                <p><strong>O RUT:</strong> 21.313.407-8</p>
+                <p><strong>Contraseña:</strong> 1234567</p>
+                <br>
+                <p>Ahora puedes <a href="/" style="font-size: 20px;">volver al login</a> y entrar con estos datos.</p>
+            `;
+        } else {
+            // Buscar usuario asociado
+            const usuario = usuarios.find(u => u.id_usuario === empleadoExistente.usuario_id);
+            
+            if (usuario) {
+                // Actualizar contraseña si es necesario
+                usuario.clave = '1234567';
+                localStorage.setItem('apt_usuarios', JSON.stringify(usuarios));
+                
+                document.body.innerHTML = `
+                    <h1 style="color: blue;">ℹ️ Usuario ya existe</h1>
+                    <h2>Datos de acceso actualizados:</h2>
+                    <p><strong>Usuario:</strong> ${usuario.usuario}</p>
+                    <p><strong>O RUT:</strong> ${rutBuscado}</p>
+                    <p><strong>Contraseña:</strong> 1234567</p>
+                    <br>
+                    <p>Ahora puedes <a href="/" style="font-size: 20px;">volver al login</a> y entrar con estos datos.</p>
+                `;
+            } else {
+                document.body.innerHTML = `
+                    <h1 style="color: red;">❌ Error</h1>
+                    <p>Se encontró el empleado pero no tiene usuario asociado.</p>
+                    <p><a href="/">Volver al inicio</a></p>
+                `;
+            }
+        }
+    </script>
+</body>
+</html>
+
+
+
+
+
+
+
+
