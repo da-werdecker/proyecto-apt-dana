@@ -1,0 +1,9 @@
+# Dependencias locales
+node_modules
+template-apt/node_modules
+
+# Archivos de entorno
+.env
+.env.*
+backend/.env
+
