@@ -35,6 +35,8 @@ const BLOQUES_HORARIO_LV = [
   '15:15 - 16:30',
 ];
 
+const BLOQUES_HORARIO_SAB = BLOQUES_HORARIO_LV;
+
 const ESTADOS_AGENDA_PERMITIDOS = [
   'pendiente_confirmacion',
   'pendiente',
