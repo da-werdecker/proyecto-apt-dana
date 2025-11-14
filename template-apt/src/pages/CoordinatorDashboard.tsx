@@ -35,9 +35,13 @@ const BLOQUES_HORARIO_LV = [
   '15:15 - 16:30',
 ];
 
-const BLOQUES_HORARIO_SAB = [
-  '09:00 - 11:00',
-  '11:00 - 13:00',
+const ESTADOS_AGENDA_PERMITIDOS = [
+  'pendiente_confirmacion',
+  'pendiente',
+  'confirmada',
+  'confirmado',
+  'aprobada',
+  'aprobado',
 ];
 
 interface CoordinatorDashboardProps {
@@ -81,7 +85,7 @@ const [reportOrderStats, setReportOrderStats] = useState({
 
   // Estados para Agenda/Calendario
   const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
   const [agendaItems, setAgendaItems] = useState<any[]>([]);
   const [selectedDayAppointments, setSelectedDayAppointments] = useState<any[]>([]);
 const [solicitudesHistoricas, setSolicitudesHistoricas] = useState<any[]>([]);
@@ -168,24 +172,24 @@ const workOrdersCounts = {
       return;
     }
 
-    try {
-      const { data, error } = await supabase
-        .from('solicitud_diagnostico')
-        .select(`
-          id_solicitud_diagnostico,
-          fecha_solicitada,
-          bloque_horario,
-          bloque_horario_confirmado,
-          tipo_problema,
-          prioridad,
-          estado_solicitud,
-          comentarios,
-          fecha_confirmada,
-          created_at,
-          empleado:empleado_id (nombre, apellido_paterno),
-          vehiculo:vehiculo_id (patente_vehiculo)
-        `)
-        .order('fecha_confirmada', { ascending: false })
+        try {
+          const { data, error } = await supabase
+            .from('solicitud_diagnostico')
+            .select(`
+              id_solicitud_diagnostico,
+              fecha_solicitada,
+              bloque_horario,
+              bloque_horario_confirmado,
+              tipo_problema,
+              prioridad,
+              estado_solicitud,
+              comentarios,
+              fecha_confirmada,
+              created_at,
+              empleado:empleado_id (nombre, apellido_paterno),
+              vehiculo:vehiculo_id (patente_vehiculo)
+            `)
+            .order('fecha_confirmada', { ascending: false })
         .limit(100);
 
       if (error) {
@@ -193,22 +197,22 @@ const workOrdersCounts = {
       }
 
       let historicas = (data ?? [])
-        .filter((item: any) => {
-          const estado = (item.estado_solicitud || '').toLowerCase();
-          return ['aprobada', 'aprobado', 'confirmada', 'confirmado', 'rechazada', 'rechazado'].includes(estado);
-        })
-        .map((item: any) => ({
-          id_solicitud_diagnostico: item.id_solicitud_diagnostico,
-          fecha_solicitada: item.fecha_solicitada,
-          bloque_horario: item.bloque_horario,
-          bloque_horario_confirmado: item.bloque_horario_confirmado,
-          tipo_problema: item.tipo_problema,
-          prioridad: item.prioridad,
-          estado_solicitud: (item.estado_solicitud || '').toLowerCase(),
-          comentarios: item.comentarios,
-          fecha_confirmada: item.fecha_confirmada,
-          fecha_resuelta: item.fecha_confirmada,
-          created_at: item.created_at,
+              .filter((item: any) => {
+                const estado = (item.estado_solicitud || '').toLowerCase();
+                return ['aprobada', 'aprobado', 'confirmada', 'confirmado', 'rechazada', 'rechazado'].includes(estado);
+              })
+              .map((item: any) => ({
+                id_solicitud_diagnostico: item.id_solicitud_diagnostico,
+                fecha_solicitada: item.fecha_solicitada,
+                bloque_horario: item.bloque_horario,
+                bloque_horario_confirmado: item.bloque_horario_confirmado,
+                tipo_problema: item.tipo_problema,
+                prioridad: item.prioridad,
+                estado_solicitud: (item.estado_solicitud || '').toLowerCase(),
+                comentarios: item.comentarios,
+                fecha_confirmada: item.fecha_confirmada,
+                fecha_resuelta: item.fecha_confirmada,
+                created_at: item.created_at,
           empleado_nombre: (() => {
             if (item.empleado) {
               const nombre = `${item.empleado.nombre || ''} ${item.empleado.apellido_paterno || ''}`.trim();
@@ -216,8 +220,8 @@ const workOrdersCounts = {
             }
             return 'N/A';
           })(),
-          patente_vehiculo: item.vehiculo?.patente_vehiculo || 'N/A',
-        }));
+                patente_vehiculo: item.vehiculo?.patente_vehiculo || 'N/A',
+              }));
 
       const idsSupabase = new Set(historicas.map((h) => h.id_solicitud_diagnostico));
 
@@ -296,9 +300,9 @@ const workOrdersCounts = {
 
       historicas = historicas.sort(
           (a: any, b: any) =>
-            new Date(b.fecha_confirmada || b.created_at || b.fecha_solicitada || 0).getTime() -
-            new Date(a.fecha_confirmada || a.created_at || a.fecha_solicitada || 0).getTime()
-        );
+          new Date(b.fecha_confirmada || b.created_at || b.fecha_solicitada || 0).getTime() -
+          new Date(a.fecha_confirmada || a.created_at || a.fecha_solicitada || 0).getTime()
+      );
 
       setSolicitudesHistoricas(historicas);
     } catch (error) {
@@ -343,14 +347,14 @@ const workOrdersCounts = {
         return;
       }
 
-      const { data, error } = await supabase
-        .from('solicitud_diagnostico')
-        .select(`
-          *,
-          empleado:empleado_id(nombre, apellido_paterno),
-          vehiculo:vehiculo_id(patente_vehiculo)
-        `)
-        .eq('estado_solicitud', 'pendiente_confirmacion')
+          const { data, error } = await supabase
+            .from('solicitud_diagnostico')
+            .select(`
+              *,
+              empleado:empleado_id(nombre, apellido_paterno),
+              vehiculo:vehiculo_id(patente_vehiculo)
+            `)
+            .eq('estado_solicitud', 'pendiente_confirmacion')
         .order('created_at', { ascending: false });
 
       if (error) {
@@ -504,45 +508,45 @@ const workOrdersCounts = {
         throw new Error('Supabase no está configurado. No es posible confirmar la solicitud.');
       }
 
-      console.log('🔍 Intentando usar Supabase...');
+          console.log('🔍 Intentando usar Supabase...');
 
-      const { error: updateError } = await supabase
-        .from('solicitud_diagnostico')
-        .update({
-          estado_solicitud: 'confirmada',
-          tipo_trabajo: formData.tipo_trabajo,
-          fecha_confirmada: formData.fecha_confirmada,
-          bloque_horario_confirmado: formData.bloque_horario_confirmado,
-          box_id: formData.box_id ? parseInt(formData.box_id) : null,
-          mecanico_id: formData.mecanico_id ? parseInt(formData.mecanico_id) : null,
-        })
-        .eq('id_solicitud_diagnostico', selectedSolicitud.id_solicitud_diagnostico);
+          const { error: updateError } = await supabase
+            .from('solicitud_diagnostico')
+            .update({
+              estado_solicitud: 'confirmada',
+              tipo_trabajo: formData.tipo_trabajo,
+              fecha_confirmada: formData.fecha_confirmada,
+              bloque_horario_confirmado: formData.bloque_horario_confirmado,
+              box_id: formData.box_id ? parseInt(formData.box_id) : null,
+              mecanico_id: formData.mecanico_id ? parseInt(formData.mecanico_id) : null,
+            })
+            .eq('id_solicitud_diagnostico', selectedSolicitud.id_solicitud_diagnostico);
 
-      if (updateError) {
+          if (updateError) {
         throw updateError;
       }
 
-      const { data: otData, error: otError } = await supabase
-        .from('orden_trabajo')
-        .insert([nuevaOT])
-        .select()
-        .single();
+            const { data: otData, error: otError } = await supabase
+              .from('orden_trabajo')
+              .insert([nuevaOT])
+              .select()
+              .single();
 
       if (otError || !otData) {
         throw otError || new Error('No se pudo crear la Orden de Trabajo en Supabase.');
       }
 
       const { error: linkError } = await supabase
-        .from('solicitud_diagnostico')
-        .update({ orden_trabajo_id: otData.id_orden_trabajo })
-        .eq('id_solicitud_diagnostico', selectedSolicitud.id_solicitud_diagnostico);
+                .from('solicitud_diagnostico')
+                .update({ orden_trabajo_id: otData.id_orden_trabajo })
+                .eq('id_solicitud_diagnostico', selectedSolicitud.id_solicitud_diagnostico);
 
       if (linkError) {
         throw linkError;
       }
-      
-      console.log('✅ Proceso de guardado completado exitosamente');
 
+      console.log('✅ Proceso de guardado completado exitosamente');
+      
       setSuccess('Solicitud confirmada y Orden de Trabajo creada exitosamente.');
       setProcessing(false);
       
@@ -581,10 +585,10 @@ const workOrdersCounts = {
         throw new Error('Supabase no está configurado. No es posible rechazar la solicitud.');
       }
 
-      await supabase
-        .from('solicitud_diagnostico')
-        .update({ estado_solicitud: 'rechazada' })
-        .eq('id_solicitud_diagnostico', solicitud.id_solicitud_diagnostico);
+        await supabase
+          .from('solicitud_diagnostico')
+          .update({ estado_solicitud: 'rechazada' })
+          .eq('id_solicitud_diagnostico', solicitud.id_solicitud_diagnostico);
 
       await loadSolicitudes();
       await loadWorkOrders();
@@ -630,57 +634,57 @@ const workOrdersCounts = {
         supabase
           .from('solicitud_diagnostico')
           .select(
-            'id_solicitud_diagnostico, fecha_confirmada, fecha_solicitada, bloque_horario_confirmado, bloque_horario, tipo_problema, prioridad, estado_solicitud, empleado_id, vehiculo_id, orden_trabajo_id'
+            'id_solicitud_diagnostico, fecha_confirmada, fecha_solicitada, bloque_horario_confirmado, bloque_horario, tipo_problema, prioridad, estado_solicitud, empleado_id, vehiculo_id, orden_trabajo_id, patente_vehiculo'
           )
-          .in('estado_solicitud', ['confirmada', 'confirmado'])
+          .in('estado_solicitud', ESTADOS_AGENDA_PERMITIDOS)
           .order('fecha_confirmada', { ascending: true }),
-        supabase.from('empleado').select('id_empleado, nombre, apellido_paterno'),
-        supabase.from('vehiculo').select('id_vehiculo, patente_vehiculo'),
+              supabase.from('empleado').select('id_empleado, nombre, apellido_paterno'),
+              supabase.from('vehiculo').select('id_vehiculo, patente_vehiculo'),
         supabase.from('orden_trabajo').select('id_orden_trabajo, solicitud_diagnostico_id, mecanico_id, estado_ot'),
-      ]);
+            ]);
 
       if (solicitudesError) throw solicitudesError;
       if (empleadosError) throw empleadosError;
       if (vehiculosError) throw vehiculosError;
       if (ordenesError) throw ordenesError;
 
-      const empleadoMap = new Map<number, any>();
-      (empleadosDb || []).forEach((empleado: any) => empleadoMap.set(empleado.id_empleado, empleado));
+            const empleadoMap = new Map<number, any>();
+            (empleadosDb || []).forEach((empleado: any) => empleadoMap.set(empleado.id_empleado, empleado));
 
-      const vehiculoMap = new Map<number, any>();
-      (vehiculosDb || []).forEach((vehiculo: any) => vehiculoMap.set(vehiculo.id_vehiculo, vehiculo));
+            const vehiculoMap = new Map<number, any>();
+            (vehiculosDb || []).forEach((vehiculo: any) => vehiculoMap.set(vehiculo.id_vehiculo, vehiculo));
 
-      const ordenMap = new Map<number, any>();
-      (ordenesDb || []).forEach((orden: any) => {
-        if (orden?.solicitud_diagnostico_id) {
-          ordenMap.set(orden.solicitud_diagnostico_id, orden);
-        }
-      });
+            const ordenMap = new Map<number, any>();
+            (ordenesDb || []).forEach((orden: any) => {
+              if (orden?.solicitud_diagnostico_id) {
+                ordenMap.set(orden.solicitud_diagnostico_id, orden);
+              }
+            });
 
       const itemsEnriquecidos = (solicitudesDb || [])
         .map((solicitud: any) => {
-          const empleado = empleadoMap.get(solicitud.empleado_id);
-          const vehiculo = vehiculoMap.get(solicitud.vehiculo_id);
-          const orden = ordenMap.get(solicitud.id_solicitud_diagnostico);
+              const empleado = empleadoMap.get(solicitud.empleado_id);
+        const vehiculo = vehiculoMap.get(solicitud.vehiculo_id);
+              const orden = ordenMap.get(solicitud.id_solicitud_diagnostico);
 
           return {
-            id: solicitud.id_solicitud_diagnostico,
-            fecha: solicitud.fecha_confirmada || solicitud.fecha_solicitada,
-            bloque_horario: solicitud.bloque_horario_confirmado || solicitud.bloque_horario,
-            patente: solicitud.patente_vehiculo || vehiculo?.patente_vehiculo || 'N/A',
-            chofer: empleado ? `${empleado.nombre || ''} ${empleado.apellido_paterno || ''}`.trim() || 'N/A' : 'N/A',
-            mecanico: orden?.mecanico_id ? `Mecánico #${orden.mecanico_id}` : 'Sin asignar',
-            tipo_problema: solicitud.tipo_problema,
-            prioridad: solicitud.prioridad,
-            estado: orden?.estado_ot || solicitud.estado_solicitud,
-            orden_id: orden?.id_orden_trabajo || solicitud.orden_trabajo_id || null,
+                id: solicitud.id_solicitud_diagnostico,
+          fecha: solicitud.fecha_confirmada || solicitud.fecha_solicitada,
+                bloque_horario: solicitud.bloque_horario_confirmado || solicitud.bloque_horario,
+          patente: solicitud.patente_vehiculo || vehiculo?.patente_vehiculo || 'N/A',
+                chofer: empleado ? `${empleado.nombre || ''} ${empleado.apellido_paterno || ''}`.trim() || 'N/A' : 'N/A',
+                mecanico: orden?.mecanico_id ? `Mecánico #${orden.mecanico_id}` : 'Sin asignar',
+                tipo_problema: solicitud.tipo_problema,
+                prioridad: solicitud.prioridad,
+                estado: orden?.estado_ot || solicitud.estado_solicitud,
+                orden_id: orden?.id_orden_trabajo || solicitud.orden_trabajo_id || null,
           };
         })
         .sort((a, b) => {
-          const dateA = a.fecha ? new Date(a.fecha).getTime() : 0;
-          const dateB = b.fecha ? new Date(b.fecha).getTime() : 0;
-          return dateA - dateB;
-        });
+        const dateA = a.fecha ? new Date(a.fecha).getTime() : 0;
+        const dateB = b.fecha ? new Date(b.fecha).getTime() : 0;
+        return dateA - dateB;
+      });
 
       setAgendaItems(itemsEnriquecidos);
     } catch (error) {
@@ -738,6 +742,14 @@ const workOrdersCounts = {
     return getAppointmentsForDate(date).length > 0;
   };
 
+  useEffect(() => {
+    if (!selectedDate) {
+      setSelectedDayAppointments([]);
+      return;
+    }
+    setSelectedDayAppointments(getAppointmentsForDate(selectedDate));
+  }, [agendaItems, selectedDate]);
+
   // Función para cargar vehículos
   const loadVehicles = async () => {
     if (!hasEnv) {
@@ -749,19 +761,19 @@ const workOrdersCounts = {
 
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('vehiculo')
-        .select(`
-          *,
-          modelo:modelo_vehiculo_id(nombre_modelo, marca:marca_vehiculo_id(nombre_marca)),
-          tipo:tipo_vehiculo_id(tipo_vehiculo),
-          sucursal:sucursal_id(nombre_sucursal)
-        `)
-        .order('patente_vehiculo', { ascending: true });
-
+          const { data, error } = await supabase
+            .from('vehiculo')
+            .select(`
+              *,
+              modelo:modelo_vehiculo_id(nombre_modelo, marca:marca_vehiculo_id(nombre_marca)),
+              tipo:tipo_vehiculo_id(tipo_vehiculo),
+              sucursal:sucursal_id(nombre_sucursal)
+            `)
+            .order('patente_vehiculo', { ascending: true });
+          
       if (error) {
         throw error;
-      }
+        }
 
       const vehiclesData = data ?? [];
       setVehicles(vehiclesData);
@@ -793,25 +805,25 @@ const workOrdersCounts = {
 
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('orden_trabajo')
-        .select(`
-          *,
-          empleado:empleado_id(nombre, apellido_paterno),
-          vehiculo:vehiculo_id(patente_vehiculo)
-        `)
-        .order('fecha_inicio_ot', { ascending: false });
-
+          const { data, error } = await supabase
+            .from('orden_trabajo')
+            .select(`
+              *,
+              empleado:empleado_id(nombre, apellido_paterno),
+              vehiculo:vehiculo_id(patente_vehiculo)
+            `)
+            .order('fecha_inicio_ot', { ascending: false });
+          
       if (error) throw error;
 
       const ordersData = data ?? [];
       const ordenesOrdenadas = ordersData
         .slice()
         .sort((a, b) => {
-          const fechaA = new Date(a.created_at || a.fecha_inicio_ot || 0).getTime();
-          const fechaB = new Date(b.created_at || b.fecha_inicio_ot || 0).getTime();
+        const fechaA = new Date(a.created_at || a.fecha_inicio_ot || 0).getTime();
+        const fechaB = new Date(b.created_at || b.fecha_inicio_ot || 0).getTime();
           return fechaB - fechaA;
-        });
+      });
 
       setWorkOrders(ordenesOrdenadas);
 
@@ -847,28 +859,28 @@ const workOrdersCounts = {
 
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('orden_trabajo')
-        .select(
-          `
-          id_orden_trabajo,
-          descripcion_ot,
-          estado_ot,
-          estado_cierre,
-          prioridad_ot,
-          fecha_inicio_ot,
-          fecha_cierre_ot,
-          fecha_cierre_tecnico,
-          detalle_reparacion,
-          vehiculo:vehiculo_id(patente_vehiculo),
-          solicitud:solicitud_diagnostico_id(
-            tipo_problema,
-            prioridad,
-            patente_vehiculo
-          )
-        `
-        )
-        .order('created_at', { ascending: false });
+          const { data, error } = await supabase
+            .from('orden_trabajo')
+            .select(
+              `
+              id_orden_trabajo,
+              descripcion_ot,
+              estado_ot,
+              estado_cierre,
+              prioridad_ot,
+              fecha_inicio_ot,
+              fecha_cierre_ot,
+              fecha_cierre_tecnico,
+              detalle_reparacion,
+              vehiculo:vehiculo_id(patente_vehiculo),
+              solicitud:solicitud_diagnostico_id(
+                tipo_problema,
+                prioridad,
+                patente_vehiculo
+              )
+            `
+            )
+            .order('created_at', { ascending: false });
 
       if (error) throw error;
 
