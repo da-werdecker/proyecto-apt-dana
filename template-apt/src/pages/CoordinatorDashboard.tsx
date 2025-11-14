@@ -636,7 +636,7 @@ const workOrdersCounts = {
         supabase
           .from('solicitud_diagnostico')
           .select(
-            'id_solicitud_diagnostico, fecha_confirmada, fecha_solicitada, bloque_horario_confirmado, bloque_horario, tipo_problema, prioridad, estado_solicitud, empleado_id, vehiculo_id, orden_trabajo_id, patente_vehiculo'
+            'id_solicitud_diagnostico, fecha_confirmada, fecha_solicitada, bloque_horario_confirmado, bloque_horario, tipo_problema, prioridad, estado_solicitud, empleado_id, vehiculo_id, orden_trabajo_id'
           )
           .in('estado_solicitud', ESTADOS_AGENDA_PERMITIDOS)
           .order('fecha_confirmada', { ascending: true }),
