@@ -267,6 +267,9 @@ export default function MechanicDashboard({ activeSection = 'assigned' }: Mechan
           solicitud_diagnostico_id,
           mecanico_apoyo_ids,
           confirmado_ingreso,
+          fecha_programada_reparacion,
+          hora_programada_reparacion,
+          estado_reparacion,
           hora_confirmada,
           fecha_inicio_ot,
           fecha_cierre_ot,
@@ -345,6 +348,9 @@ export default function MechanicDashboard({ activeSection = 'assigned' }: Mechan
             'N/A',
           fecha_programada: fechaProgramada,
           hora_estimado: bloqueHorario || 'N/A',
+          fecha_programada_reparacion: orden.fecha_programada_reparacion || null,
+          hora_programada_reparacion: orden.hora_programada_reparacion || '',
+          estado_reparacion: orden.estado_reparacion || 'pendiente',
           tipo_vehiculo:
             vehiculo.tipo?.tipo_vehiculo ||
             solicitud.tipo_vehiculo ||
@@ -1488,7 +1494,18 @@ export default function MechanicDashboard({ activeSection = 'assigned' }: Mechan
             </div>
           ) : (
             <div className="space-y-5">
-              {myOrders.map((order) => (
+              {myOrders.map((order) => {
+                const reparacionEstado = (order.estado_reparacion || 'pendiente').toLowerCase();
+                const reparacionProgramada = Boolean(order.fecha_programada_reparacion);
+                const reparacionBadgeClasses =
+                  reparacionEstado === 'programada'
+                    ? 'bg-emerald-100 text-emerald-700'
+                    : reparacionEstado === 'en_reparacion'
+                    ? 'bg-blue-100 text-blue-700'
+                    : reparacionEstado === 'finalizada'
+                    ? 'bg-slate-200 text-slate-700'
+                    : 'bg-amber-100 text-amber-700';
+                return (
                 <div
                   key={order.id_orden_trabajo}
                   className="rounded-3xl border border-slate-200 bg-gradient-to-br from-slate-50 via-white to-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg"
@@ -1526,6 +1543,11 @@ export default function MechanicDashboard({ activeSection = 'assigned' }: Mechan
                         >
                           {order.estado_ot === 'finalizada' ? 'Finalizada' : order.estado_ot}
                         </span>
+                        <span
+                          className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${reparacionBadgeClasses}`}
+                        >
+                          {`Reparación: ${reparacionEstado.replace(/_/g, ' ')}`}
+                        </span>
                       </div>
 
                       <div className="grid gap-3 text-sm text-slate-600 sm:grid-cols-2 lg:grid-cols-3">
@@ -1560,6 +1582,19 @@ export default function MechanicDashboard({ activeSection = 'assigned' }: Mechan
                             </span>
                         )}
                       </div>
+
+                      {reparacionProgramada && (
+                        <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-xs font-semibold text-blue-700 inline-flex items-center gap-2">
+                          <Calendar size={16} />
+                          <span>
+                            Reparación programada para{' '}
+                            {formatDate(order.fecha_programada_reparacion)}{' '}
+                            {order.hora_programada_reparacion
+                              ? `· ${order.hora_programada_reparacion}`
+                              : ''}
+                          </span>
+                        </div>
+                      )}
                     </div>
 
                     <div className="flex flex-col items-stretch gap-2 md:items-end">
@@ -1580,7 +1615,8 @@ export default function MechanicDashboard({ activeSection = 'assigned' }: Mechan
                     </div>
                   </div>
                 </div>
-              ))}
+              );
+              })}
             </div>
           )}
         </div>

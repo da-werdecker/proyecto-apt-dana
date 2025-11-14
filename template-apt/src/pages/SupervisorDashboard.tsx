@@ -60,6 +60,9 @@ export default function SupervisorDashboard({ activeSection = 'tablero' }: Super
             fecha_cierre_ot,
             fecha_cierre_tecnico,
             estado_cierre,
+            fecha_programada_reparacion,
+            hora_programada_reparacion,
+            estado_reparacion,
             vehiculo:vehiculo_id (
               patente_vehiculo
             ),
@@ -127,6 +130,9 @@ export default function SupervisorDashboard({ activeSection = 'tablero' }: Super
           bloque_horario: solicitud.bloque_horario_confirmado || '',
           estado_normalizado: estado,
           prioridad_normalizada: prioridad,
+          fecha_programada_reparacion: orden.fecha_programada_reparacion || null,
+          hora_programada_reparacion: orden.hora_programada_reparacion || null,
+          estado_reparacion: orden.estado_reparacion || 'pendiente',
           categoria,
           esAtrasada,
           esActiva,
@@ -176,6 +182,9 @@ export default function SupervisorDashboard({ activeSection = 'tablero' }: Super
               estado_ot,
               mecanico_apoyo_ids,
               fecha_inicio_ot,
+              fecha_programada_reparacion,
+              hora_programada_reparacion,
+              estado_reparacion,
               vehiculo:vehiculo_id(patente_vehiculo),
               solicitud:solicitud_diagnostico_id(
                 tipo_problema,
@@ -492,6 +501,20 @@ export default function SupervisorDashboard({ activeSection = 'tablero' }: Super
                             {order.bloque_horario || 'Sin bloque asignado'}
                           </p>
                           <p>
+                            <strong>Reparación:</strong>{' '}
+                            {order.fecha_programada_reparacion
+                              ? `${formatDate(order.fecha_programada_reparacion)}${
+                                  order.hora_programada_reparacion
+                                    ? ` · ${order.hora_programada_reparacion}`
+                                    : ''
+                                }`
+                              : 'Pendiente de programar'}
+                          </p>
+                          <p>
+                            <strong>Estado reparación:</strong>{' '}
+                            {(order.estado_reparacion || 'pendiente').replace(/_/g, ' ')}
+                          </p>
+                          <p>
                             <strong>Cierre técnico:</strong>{' '}
                             {order.fecha_cierre_tecnico ? formatDate(order.fecha_cierre_tecnico) : 'Pendiente'}
                           </p>
@@ -597,6 +620,18 @@ export default function SupervisorDashboard({ activeSection = 'tablero' }: Super
                               {solicitud?.bloque_horario_confirmado ? ` · ${solicitud.bloque_horario_confirmado}` : ''}
                             </p>
                             <p>
+                              <strong>Reparación:</strong>{' '}
+                              {orden?.fecha_programada_reparacion
+                                ? `${formatDate(orden.fecha_programada_reparacion)}${
+                                    orden.hora_programada_reparacion ? ` · ${orden.hora_programada_reparacion}` : ''
+                                  }`
+                                : 'Pendiente de programar'}
+                            </p>
+                            <p>
+                              <strong>Estado reparación:</strong>{' '}
+                              {(orden?.estado_reparacion || 'pendiente').replace(/_/g, ' ')}
+                            </p>
+                            <p>
                               <strong>Comentarios:</strong>{' '}
                               {asignacion?.comentarios || 'Sin comentarios'}
                             </p>
@@ -666,6 +701,13 @@ export default function SupervisorDashboard({ activeSection = 'tablero' }: Super
                           </p>
                           <p className="text-xs text-slate-500">
                             Trabajo: {solicitud?.tipo_problema || orden?.descripcion_ot || 'Sin descripción'}
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            Reparación: {orden?.fecha_programada_reparacion
+                              ? `${formatDate(orden.fecha_programada_reparacion)}${
+                                  orden.hora_programada_reparacion ? ` · ${orden.hora_programada_reparacion}` : ''
+                                }`
+                              : 'Pendiente de programar'}
                           </p>
                           <p className="text-xs text-slate-500">
                             Resuelto el {formatDate(asignacion.aprobado_en || asignacion.updated_at || asignacion.created_at || '')}

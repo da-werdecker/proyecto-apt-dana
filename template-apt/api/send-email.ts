@@ -1,6 +1,6 @@
 // api/send-email.ts
 
-import { Resend } from "resend";
+import MailerSend, { EmailParams, Recipient } from "mailersend";
 
 export default async function handler(req: Request) {
   if (req.method !== "POST")
@@ -9,24 +9,36 @@ export default async function handler(req: Request) {
   const body = await req.json();
   const { to, subject, html } = body;
 
-  const resend = new Resend(process.env.RESEND_API_KEY as string);
+  const apiKey = process.env.MAILERSEND_API_KEY;
+  const fromEmail = process.env.MAILERSEND_FROM;
+
+  if (!apiKey || !fromEmail) {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error: "MAILERSEND_API_KEY o MAILERSEND_FROM no configurados",
+      }),
+      { status: 500, headers: { "Content-Type": "application/json" } },
+    );
+  }
+
+  const mailersend = new MailerSend({ apiKey });
 
   try {
-    const { data, error } = await resend.emails.send({
-      from: "APT Taller <onboarding@resend.dev>", // Usar dominio de prueba. Cambia a tu dominio verificado en producción
-      to,
-      subject,
-      html
-    });
+    const emailParams = new EmailParams()
+      .setFrom({ email: fromEmail })
+      .setTo([new Recipient(to)])
+      .setSubject(subject)
+      .setHtml(html);
 
-    if (error) throw error;
+    const response = await mailersend.email.send(emailParams);
 
-    return new Response(JSON.stringify({ ok: true, id: data?.id }), { 
+    return new Response(JSON.stringify({ ok: true, id: response.id }), { 
       status: 200,
       headers: { "Content-Type": "application/json" }
     });
   } catch (e: any) {
-    return new Response(JSON.stringify({ ok: false, error: e.message }), { 
+    return new Response(JSON.stringify({ ok: false, error: e.message ?? 'Error enviando correo' }), { 
       status: 500,
       headers: { "Content-Type": "application/json" }
     });

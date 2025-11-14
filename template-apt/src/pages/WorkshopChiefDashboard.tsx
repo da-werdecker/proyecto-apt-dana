@@ -48,6 +48,8 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
     mecanico_apoyo_ids: number[];
     confirmado_ingreso: boolean;
     estado_ot: string;
+    fecha_programada_reparacion: string;
+    hora_programada_reparacion: string;
   }>({
     prioridad_ot: 'normal',
     checklist_id: '',
@@ -56,6 +58,8 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
     mecanico_apoyo_ids: [],
     confirmado_ingreso: false,
     estado_ot: 'en_reparacion',
+    fecha_programada_reparacion: '',
+    hora_programada_reparacion: '',
   });
 
   const hasEnv = Boolean(import.meta.env.VITE_SUPABASE_URL) && Boolean(import.meta.env.VITE_SUPABASE_ANON_KEY);
@@ -220,6 +224,9 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
                 checklist_id,
                 mecanico_apoyo_ids,
                 confirmado_ingreso,
+                fecha_programada_reparacion,
+                hora_programada_reparacion,
+                estado_reparacion,
                 hora_confirmada,
                 fecha_inicio_ot,
                 fecha_cierre_ot,
@@ -687,6 +694,10 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
       mecanico_apoyo_ids: apoyos,
       confirmado_ingreso: orden.ya_ingreso || false,
       estado_ot: orden.estado_ot || 'en_reparacion',
+      fecha_programada_reparacion: orden.fecha_programada_reparacion
+        ? String(orden.fecha_programada_reparacion).slice(0, 10)
+        : '',
+      hora_programada_reparacion: orden.hora_programada_reparacion || '',
     });
     setModalOpen(true);
   };
@@ -784,6 +795,11 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
       return;
     }
 
+    if (!formData.fecha_programada_reparacion || !formData.hora_programada_reparacion) {
+      alert('Debes agendar la fecha y hora de la reparación antes de guardar.');
+      return;
+    }
+
     if (!hasEnv) {
       alert('Configura Supabase para poder guardar la orden de trabajo.');
       return;
@@ -806,6 +822,9 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
           estado_ot: estadoActualizado,
           empleado_id: principalId,
           mecanico_apoyo_ids: [],
+          fecha_programada_reparacion: formData.fecha_programada_reparacion,
+          hora_programada_reparacion: formData.hora_programada_reparacion,
+          estado_reparacion: 'programada',
         })
         .eq('id_orden_trabajo', selectedOT.id_orden_trabajo);
 
@@ -827,6 +846,48 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
       }
 
       await syncAssignmentApprovals(selectedOT.id_orden_trabajo, [principalId]);
+
+      // Notificar al chofer sobre la reparación programada
+      try {
+        let choferUsuarioId: number | null = null;
+        const choferEmpleadoId =
+          selectedOT.solicitud?.empleado_id ||
+          selectedOT.solicitud_detalle?.empleado_id ||
+          null;
+        if (choferEmpleadoId) {
+          const { data: choferEmpleado, error: choferError } = await supabase
+            .from('empleado')
+            .select('usuario_id')
+            .eq('id_empleado', choferEmpleadoId)
+            .maybeSingle();
+
+          if (!choferError) {
+            choferUsuarioId = choferEmpleado?.usuario_id ?? null;
+          } else {
+            console.warn('⚠️ No se pudo obtener el usuario del chofer:', choferError);
+          }
+        }
+
+        if (choferUsuarioId) {
+          await supabase.from('notificacion').insert({
+            usuario_id: choferUsuarioId,
+            tipo: 'reparacion_programada',
+            titulo: 'Reparación programada',
+            mensaje: `Tu vehículo ${
+              selectedOT.patente_vehiculo || selectedOT?.solicitud?.patente_vehiculo || ''
+            } fue agendado para reparación el ${formData.fecha_programada_reparacion} a las ${
+              formData.hora_programada_reparacion
+            }.`,
+            metadata: {
+              orden_trabajo_id: selectedOT.id_orden_trabajo,
+              fecha_programada_reparacion: formData.fecha_programada_reparacion,
+              hora_programada_reparacion: formData.hora_programada_reparacion,
+            },
+          });
+        }
+      } catch (notifyError) {
+        console.warn('⚠️ No se pudo registrar la notificación para el chofer:', notifyError);
+      }
 
       alert('✅ Orden de trabajo actualizada exitosamente');
       setModalOpen(false);
@@ -2897,6 +2958,49 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
                 </select>
               </div>
             )}
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Programar reparación
+              </label>
+              {modalReadOnly ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm text-gray-700">
+                  <div>
+                    <strong>Fecha:</strong>{' '}
+                    {formData.fecha_programada_reparacion
+                      ? formatDate(formData.fecha_programada_reparacion)
+                      : 'Sin programar'}
+                  </div>
+                  <div>
+                    <strong>Hora:</strong>{' '}
+                    {formData.hora_programada_reparacion || 'Sin programar'}
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <input
+                      type="date"
+                      value={formData.fecha_programada_reparacion}
+                      onChange={(e) =>
+                        setFormData({ ...formData, fecha_programada_reparacion: e.target.value })
+                      }
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <input
+                      type="time"
+                      value={formData.hora_programada_reparacion}
+                      onChange={(e) =>
+                        setFormData({ ...formData, hora_programada_reparacion: e.target.value })
+                      }
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">

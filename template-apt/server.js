@@ -1,7 +1,7 @@
 // server.js - Servidor Express para desarrollo local
 import express from 'express';
 import cors from 'cors';
-import { Resend } from 'resend';
+import MailerSend, { EmailParams, Recipient, Sender } from 'mailersend';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -20,7 +20,7 @@ if (fs.existsSync(envPath)) {
   dotenv.config({ path: envPath, override: true });
   
   // Si dotenv no funcionó, leer manualmente
-  if (!process.env.RESEND_API_KEY) {
+  if (!process.env.MAILERSEND_API_KEY) {
     console.log('⚠️ dotenv no cargó la API key, leyendo manualmente...');
     try {
       let envContent = fs.readFileSync(envPath, 'utf8');
@@ -38,9 +38,9 @@ if (fs.existsSync(envPath)) {
         }
         if (trimmed && !trimmed.startsWith('#') && trimmed.includes('=')) {
           const [key, ...valueParts] = trimmed.split('=');
-          if (key.trim() === 'RESEND_API_KEY') {
+          if (key.trim() === 'MAILERSEND_API_KEY') {
             const apiKeyValue = valueParts.join('=').trim();
-            process.env.RESEND_API_KEY = apiKeyValue;
+            process.env.MAILERSEND_API_KEY = apiKeyValue;
             console.log('✅ API key cargada manualmente (longitud:', apiKeyValue.length, ')');
             break;
           }
@@ -50,17 +50,17 @@ if (fs.existsSync(envPath)) {
       console.error('❌ Error leyendo .env.local:', error.message);
     }
   } else {
-    console.log('✅ RESEND_API_KEY cargada desde dotenv');
+    console.log('✅ MAILERSEND_API_KEY cargada desde dotenv');
   }
   
   // Verificación final
-  if (process.env.RESEND_API_KEY) {
-    console.log('✅ RESEND_API_KEY configurada correctamente');
+  if (process.env.MAILERSEND_API_KEY) {
+    console.log('✅ MAILERSEND_API_KEY configurada correctamente');
   } else {
-    console.error('❌ RESEND_API_KEY NO está configurada después de todos los intentos');
+    console.error('❌ MAILERSEND_API_KEY NO está configurada después de todos los intentos');
     // Fallback: usar API key directamente (SOLO PARA DESARROLLO)
     console.log('⚠️ Usando API key de fallback...');
-    process.env.RESEND_API_KEY = 're_3MmW8vAL_3h76AMZsdmHAGY3jw37C7rDr';
+    process.env.MAILERSEND_API_KEY = 'test-mailersend-api-key';
     console.log('✅ API key de fallback configurada');
   }
 } else {
@@ -91,7 +91,7 @@ app.post('/api/send-email', async (req, res) => {
     }
 
     // Cargar API key de múltiples formas
-    let apiKey = process.env.RESEND_API_KEY;
+    let apiKey = process.env.MAILERSEND_API_KEY;
     
     // Si no está en process.env, intentar leer del archivo directamente
     if (!apiKey) {
@@ -108,7 +108,7 @@ app.post('/api/send-email', async (req, res) => {
           }
           if (trimmed && !trimmed.startsWith('#') && trimmed.includes('=')) {
             const [key, ...valueParts] = trimmed.split('=');
-            if (key.trim() === 'RESEND_API_KEY') {
+            if (key.trim() === 'MAILERSEND_API_KEY') {
               apiKey = valueParts.join('=').trim();
               console.log('✅ API key encontrada en archivo (longitud):', apiKey ? apiKey.length : 0);
               break;
@@ -125,36 +125,30 @@ app.post('/api/send-email', async (req, res) => {
     console.log('📧 API Key encontrada:', apiKey ? 'Sí (oculta)' : 'No');
     
     if (!apiKey) {
-      console.error('❌ RESEND_API_KEY no configurada');
+    console.error('❌ MAILERSEND_API_KEY no configurada');
       return res.status(500).json({ 
         ok: false, 
-        error: 'RESEND_API_KEY no configurada. Verifica tu archivo .env.local' 
+      error: 'MAILERSEND_API_KEY no configurada. Verifica tu archivo .env.local' 
       });
     }
 
-    console.log('📧 Inicializando Resend...');
-    const resend = new Resend(apiKey);
+    const mailersend = new MailerSend({ apiKey });
+    const fromEmail = process.env.MAILERSEND_FROM || 'no-reply@example.com';
 
+    console.log('📧 Inicializando MailerSend...');
     console.log('📧 Enviando correo a:', to);
     console.log('📧 Asunto:', subject);
-    
-    const { data, error } = await resend.emails.send({
-      from: 'APT Taller <onboarding@resend.dev>',
-      to,
-      subject,
-      html
-    });
 
-    if (error) {
-      console.error('❌ Error de Resend:', error);
-      return res.status(500).json({ 
-        ok: false, 
-        error: error.message || JSON.stringify(error) || 'Error al enviar el correo' 
-      });
-    }
+    const emailParams = new EmailParams()
+      .setFrom(new Sender(fromEmail, 'APT Taller'))
+      .setTo([new Recipient(to)])
+      .setSubject(subject)
+      .setHtml(html);
 
-    console.log('✅ Correo enviado exitosamente. ID:', data?.id);
-    res.json({ ok: true, id: data?.id });
+    const response = await mailersend.email.send(emailParams);
+
+    console.log('✅ Correo enviado exitosamente. ID:', response?.id || 'N/A');
+    res.json({ ok: true, id: response?.id });
   } catch (error) {
     console.error('❌ Error en /api/send-email:', error);
     console.error('❌ Stack:', error.stack);

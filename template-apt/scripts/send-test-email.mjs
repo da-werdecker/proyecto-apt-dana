@@ -1,5 +1,5 @@
 // scripts/send-test-email.mjs
-import { Resend } from 'resend';
+import MailerSend, { EmailParams, Recipient, Sender } from 'mailersend';
 import fs from 'node:fs';
 import path from 'node:path';
 import dotenv from 'dotenv';
@@ -11,7 +11,7 @@ if (fs.existsSync(envLocalPath)) {
   dotenv.config({ path: envLocalPath, override: true });
 }
 
-let apiKey = process.env.RESEND_API_KEY;
+let apiKey = process.env.MAILERSEND_API_KEY;
 
 // Fallback: parsear manualmente con limpieza de BOM
 if (!apiKey && fs.existsSync(envLocalPath)) {
@@ -28,7 +28,7 @@ if (!apiKey && fs.existsSync(envLocalPath)) {
     if (idx > -1) {
       const k = trimmed.slice(0, idx).trim();
       const v = trimmed.slice(idx + 1).trim();
-      if (k === 'RESEND_API_KEY' && v) {
+      if (k === 'MAILERSEND_API_KEY' && v) {
         apiKey = v;
         break;
       }
@@ -37,7 +37,7 @@ if (!apiKey && fs.existsSync(envLocalPath)) {
 }
 
 if (!apiKey) {
-  console.error('Falta RESEND_API_KEY en .env.local');
+  console.error('Falta MAILERSEND_API_KEY en .env.local');
   process.exit(1);
 }
 
@@ -45,23 +45,20 @@ if (!apiKey) {
 const toArg = process.argv[2];
 const to = toArg || 'dwerdecker@gmail.com';
 
-const resend = new Resend(apiKey);
+const mailersend = new MailerSend({ apiKey });
+const fromEmail = process.env.MAILERSEND_FROM || 'no-reply@example.com';
 
 const run = async () => {
   try {
-    const { data, error } = await resend.emails.send({
-      from: 'APT Taller <onboarding@resend.dev>',
-      to,
-      subject: 'Hola de prueba - APT Taller',
-      html: '<h1>Hola</h1><p>Este es un correo de prueba enviado desde APT Taller.</p>'
-    });
+    const emailParams = new EmailParams()
+      .setFrom(new Sender(fromEmail, 'APT Taller'))
+      .setTo([new Recipient(to)])
+      .setSubject('Hola de prueba - APT Taller')
+      .setHtml('<h1>Hola</h1><p>Este es un correo de prueba enviado desde APT Taller.</p>');
 
-    if (error) {
-      console.error('Error al enviar:', error);
-      process.exit(1);
-    }
+    const response = await mailersend.email.send(emailParams);
 
-    console.log('Correo enviado. ID:', data?.id);
+    console.log('Correo enviado. ID:', response?.id || 'N/A');
   } catch (e) {
     console.error('Fallo inesperado:', e);
     process.exit(1);
