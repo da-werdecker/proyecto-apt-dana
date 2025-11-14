@@ -1,10 +1,19 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Users, Truck, FileText, AlertCircle, Clock, User, MapPin } from 'lucide-react';
 import Card from '../components/Card';
 import Table from '../components/Table';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { OrdenTrabajo, Empleado, Vehiculo } from '../types/database';
+
+const dedupeById = <T extends Record<string, any>>(array: T[], idKey = 'id'): T[] => {
+  const map = new Map<any, T>();
+  for (const item of array) {
+    if (!item || item[idKey] === undefined || item[idKey] === null) continue;
+    map.set(item[idKey], item);
+  }
+  return Array.from(map.values());
+};
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -20,13 +29,20 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
 
   const hasEnv = Boolean(import.meta.env.VITE_SUPABASE_URL) && Boolean(import.meta.env.VITE_SUPABASE_ANON_KEY);
+  const useLocalMocks = !hasEnv;
+  const didFetchRef = useRef(false);
 
   useEffect(() => {
+    if (!user) return;
+    if (!useLocalMocks && didFetchRef.current) {
+      return;
+    }
+    didFetchRef.current = true;
     loadDashboardData();
-  }, [user]);
+  }, [user, useLocalMocks]);
 
   useEffect(() => {
-    if (user?.rol !== 'driver') {
+    if (user?.rol !== 'driver' || !useLocalMocks) {
       return;
     }
 
@@ -43,7 +59,7 @@ export default function Dashboard() {
   }, [user]);
 
   const readLocal = (key: string, fallback: any) => {
-    if (hasEnv) {
+    if (!useLocalMocks) {
       return fallback;
     }
     try {
@@ -207,9 +223,9 @@ export default function Dashboard() {
     solicitudesFuente?: any[],
     driverHistoryFuente?: any[]
   ): any[] => {
-    const solicitudesLocales = readLocal('apt_solicitudes_diagnostico', []);
-    const ordenesLS = readLocal('apt_ordenes_trabajo', []);
-    const citasLocales = readLocal('apt_driver_history', []);
+    const solicitudesLocales = useLocalMocks ? readLocal('apt_solicitudes_diagnostico', []) : [];
+    const ordenesLS = useLocalMocks ? readLocal('apt_ordenes_trabajo', []) : [];
+    const citasLocales = useLocalMocks ? readLocal('apt_driver_history', []) : [];
 
     const todasLasSolicitudes = [
       ...(Array.isArray(solicitudesFuente) ? solicitudesFuente : []),
@@ -313,8 +329,11 @@ export default function Dashboard() {
           orden.descripcion_ot
         ) || 'Diagnóstico solicitado';
 
+      const solicitudId = solicitud?.id_solicitud_diagnostico ?? solicitud?.id ?? null;
+
       return {
         id: orden.id_orden_trabajo,
+        solicitud_diagnostico_id: orden.solicitud_diagnostico_id ?? solicitudId ?? null,
         patente,
         problema,
         fecha: fechaReferencia,
@@ -541,47 +560,64 @@ export default function Dashboard() {
             asignacion: asignacionActiva,
           });
 
-          setRecentOrders(orders || []);
+          setRecentOrders(dedupeById(orders || [], 'id_orden_trabajo'));
 
-          const localOrders = readLocal('apt_ordenes_trabajo', []);
-          const localFiltered = Array.isArray(localOrders)
-            ? localOrders.filter((o: any) => o.empleado_id === empleado.id_empleado)
-            : [];
+          let combinedOrders = [...(orders || [])];
 
-          const combinedOrders = [...(orders || [])];
-          const existingIds = new Set(combinedOrders.map((o: any) => o.id_orden_trabajo));
-          localFiltered.forEach((o: any) => {
-            if (!existingIds.has(o.id_orden_trabajo)) {
-              combinedOrders.push(o);
-            }
-          });
+          if (useLocalMocks) {
+            const localOrders = readLocal('apt_ordenes_trabajo', []);
+            const localFiltered = Array.isArray(localOrders)
+              ? localOrders.filter((o: any) => o.empleado_id === empleado.id_empleado)
+              : [];
+
+            const existingIds = new Set(combinedOrders.map((o: any) => o.id_orden_trabajo));
+            localFiltered.forEach((o: any) => {
+              if (!existingIds.has(o.id_orden_trabajo)) {
+                combinedOrders.push(o);
+              }
+            });
+          }
 
           setDriverHistory(
-            buildDriverHistory(combinedOrders, empleadoIdLocal, solicitudesDb || [], driverHistoryDb || [])
+            dedupeById(
+              buildDriverHistory(combinedOrders, empleadoIdLocal, solicitudesDb || [], driverHistoryDb || []),
+              'id'
+            )
           );
         } else {
           setDriverProfile(null);
-          const empleadosLS = readLocal('apt_empleados', []);
+          const empleadosLS = useLocalMocks ? readLocal('apt_empleados', []) : [];
           const empleadoLocal = Array.isArray(empleadosLS)
             ? empleadosLS.find((e: any) => e.usuario_id === user.id_usuario)
             : null;
           empleadoIdLocal = empleadoLocal?.id_empleado || null;
-          const ordenesLS = readLocal('apt_ordenes_trabajo', []);
+          const ordenesLS = useLocalMocks ? readLocal('apt_ordenes_trabajo', []) : [];
           const filtradas = Array.isArray(ordenesLS)
             ? ordenesLS.filter((o: any) => !empleadoIdLocal || o.empleado_id === empleadoIdLocal)
             : [];
           setRecentOrders(
-            filtradas
-              .sort(
-                (a: any, b: any) =>
-                  new Date(b.fecha_inicio_ot || b.created_at || 0).getTime() -
-                  new Date(a.fecha_inicio_ot || a.created_at || 0).getTime()
-              )
-              .slice(0, 5)
+            dedupeById(
+              filtradas
+                .sort(
+                  (a: any, b: any) =>
+                    new Date(b.fecha_inicio_ot || b.created_at || 0).getTime() -
+                    new Date(a.fecha_inicio_ot || a.created_at || 0).getTime()
+                )
+                .slice(0, 5),
+              'id_orden_trabajo'
+            )
           );
-          const solicitudesLocales = readLocal('apt_solicitudes_diagnostico', []);
+          const solicitudesLocales = useLocalMocks ? readLocal('apt_solicitudes_diagnostico', []) : [];
           setDriverHistory(
-            buildDriverHistory(filtradas, empleadoIdLocal, solicitudesLocales, readLocal('apt_driver_history', []))
+            dedupeById(
+              buildDriverHistory(
+                filtradas,
+                empleadoIdLocal,
+                solicitudesLocales,
+                useLocalMocks ? readLocal('apt_driver_history', []) : []
+              ),
+              'id'
+            )
           );
         }
       } else {
@@ -595,11 +631,11 @@ export default function Dashboard() {
           .order('fecha_inicio_ot', { ascending: false })
           .limit(5);
 
-        setRecentOrders(orders || []);
+        setRecentOrders(dedupeById(orders || [], 'id_orden_trabajo'));
       }
     } catch (error) {
       console.error('Error loading dashboard data:', error);
-      if (user?.rol === 'driver') {
+      if (user?.rol === 'driver' && useLocalMocks) {
         setDriverProfile(null);
         const empleadosLS = readLocal('apt_empleados', []);
         const empleadoActual = Array.isArray(empleadosLS)
@@ -608,7 +644,7 @@ export default function Dashboard() {
         const empleadoIdLocal = empleadoActual?.id_empleado || null;
         const ordenesLS = readLocal('apt_ordenes_trabajo', []);
         setDriverHistory(
-          buildDriverHistory(Array.isArray(ordenesLS) ? ordenesLS : [], empleadoIdLocal)
+          dedupeById(buildDriverHistory(Array.isArray(ordenesLS) ? ordenesLS : [], empleadoIdLocal), 'id')
         );
         if (Array.isArray(ordenesLS) && empleadoIdLocal) {
           const recientes = ordenesLS
@@ -619,7 +655,7 @@ export default function Dashboard() {
                 new Date(a.fecha_inicio_ot || a.created_at || 0).getTime()
             )
             .slice(0, 5);
-          setRecentOrders(recientes);
+          setRecentOrders(dedupeById(recientes, 'id_orden_trabajo'));
         }
       }
     } finally {

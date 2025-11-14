@@ -3,7 +3,6 @@ import { Calendar, Clock, Upload, X, AlertCircle, CheckCircle, Truck } from 'luc
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { SolicitudDiagnostico } from '../types/database';
-import Modal from '../components/Modal';
 
 const TIPOS_PROBLEMA = [
   'Ruido',
@@ -18,25 +17,13 @@ const TIPOS_PROBLEMA = [
   'Otro',
 ];
 
-// Bloques horarios: Lunes a Viernes (07:30-16:30, excluyendo colación 12:30-13:15)
-// Cada vehículo necesita 2 horas
-const BLOQUES_HORARIO_LV = [
+// Bloques horarios disponibles para cualquier día (se mostrarán siempre)
+const BLOQUES_DIAGNOSTICO = [
   '07:30 - 09:30',
   '09:30 - 11:30',
   '13:15 - 15:15',
   '15:15 - 16:30', // Solo 1.25 horas, pero permitido para casos especiales
 ];
-
-// Bloques horarios: Sábado (09:00-14:00)
-const BLOQUES_HORARIO_SAB = [
-  '09:00 - 11:00',
-  '11:00 - 13:00',
-];
-
-// Horas ocupadas por bloque (2 horas por vehículo)
-const HORAS_POR_BLOQUE = 2;
-const MAX_BLOQUES_LV = 3; // Máximo 3 bloques completos de 2 horas en lunes-viernes (sin contar el último parcial)
-const MAX_BLOQUES_SAB = 2; // Máximo 2 bloques completos en sábado
 
 export default function ScheduleDiagnostic() {
   const { user } = useAuth();
@@ -45,18 +32,17 @@ export default function ScheduleDiagnostic() {
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
-  const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [solicitudes, setSolicitudes] = useState<any[]>([]);
-  const [availableDates, setAvailableDates] = useState<string[]>([]);
   const [availableTimeSlots, setAvailableTimeSlots] = useState<string[]>([]);
+  const [timeSlotsStatus, setTimeSlotsStatus] = useState<{ bloque: string; ocupado: boolean }[]>([]);
   const [assignedVehicles, setAssignedVehicles] = useState<any[]>([]);
   const [assignedVehiclesLoading, setAssignedVehiclesLoading] = useState(false);
 
-const hasEnv = Boolean(import.meta.env.VITE_SUPABASE_URL) && Boolean(import.meta.env.VITE_SUPABASE_ANON_KEY);
+  const hasEnv = Boolean(import.meta.env.VITE_SUPABASE_URL) && Boolean(import.meta.env.VITE_SUPABASE_ANON_KEY);
 
 if (!hasEnv) {
   console.error('Supabase no está configurado. Define VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY.');
-}
+    }
 
   const loadAssignedVehicles = async () => {
     if (!user || !hasEnv) {
@@ -117,21 +103,21 @@ if (!hasEnv) {
     }
   };
 
-const appendDriverHistory = async (entry: any) => {
+  const appendDriverHistory = async (entry: any) => {
   if (!entry.empleado_id) return;
 
   const { error } = await supabase.from('driver_history').insert({
-    empleado_id: entry.empleado_id || null,
-    solicitud_diagnostico_id: entry.solicitud_diagnostico_id || null,
-    vehiculo_id: entry.vehiculo_id || null,
-    descripcion: entry.estado_solicitud || 'pendiente_confirmacion',
-    metadata: entry,
-  });
+          empleado_id: entry.empleado_id || null,
+          solicitud_diagnostico_id: entry.solicitud_diagnostico_id || null,
+          vehiculo_id: entry.vehiculo_id || null,
+          descripcion: entry.estado_solicitud || 'pendiente_confirmacion',
+          metadata: entry,
+        });
 
   if (error) {
     throw error;
   }
-};
+  };
 
   const [formData, setFormData] = useState({
     patente_vehiculo: '',
@@ -148,19 +134,11 @@ const appendDriverHistory = async (entry: any) => {
   }, []);
 
   useEffect(() => {
-    if (solicitudes.length > 0) {
-      calculateAvailableDates();
-    } else {
-      // Si no hay solicitudes, todas las fechas están disponibles
-      calculateAllAvailableDates();
-    }
-  }, [solicitudes]);
-
-  useEffect(() => {
     if (formData.fecha_solicitada) {
       calculateAvailableTimeSlots(formData.fecha_solicitada);
     } else {
       setAvailableTimeSlots([]);
+      setTimeSlotsStatus([]);
     }
   }, [formData.fecha_solicitada, solicitudes]);
 
@@ -188,12 +166,12 @@ const appendDriverHistory = async (entry: any) => {
         return;
       }
 
-      const { data, error } = await supabase
-        .from('solicitud_diagnostico')
-        .select('*')
-        .in('estado_solicitud', ['pendiente_confirmacion', 'confirmada'])
-        .order('fecha_solicitada', { ascending: true });
-
+        const { data, error } = await supabase
+          .from('solicitud_diagnostico')
+          .select('*')
+          .in('estado_solicitud', ['pendiente_confirmacion', 'confirmada'])
+          .order('fecha_solicitada', { ascending: true });
+        
       if (error) {
         throw error;
       }
@@ -201,89 +179,39 @@ const appendDriverHistory = async (entry: any) => {
       setSolicitudes(data ?? []);
     } catch (error) {
       console.error('Error loading solicitudes:', error);
-      setSolicitudes([]);
+        setSolicitudes([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const calculateAllAvailableDates = () => {
-    const dates: string[] = [];
-    const today = new Date();
-    const maxDate = new Date();
-    maxDate.setDate(maxDate.getDate() + 30);
-
-    let currentDate = new Date(today);
-    while (currentDate <= maxDate) {
-      const dayOfWeek = currentDate.getDay();
-      // Lunes a viernes (1-5) o sábado (6)
-      if (dayOfWeek >= 1 && dayOfWeek <= 6) {
-        dates.push(currentDate.toISOString().split('T')[0]);
-      }
-      currentDate.setDate(currentDate.getDate() + 1);
-    }
-
-    setAvailableDates(dates);
-  };
-
-  const calculateAvailableDates = () => {
-    const dates: string[] = [];
-    const today = new Date();
-    const maxDate = new Date();
-    maxDate.setDate(maxDate.getDate() + 30);
-
-    let currentDate = new Date(today);
-    while (currentDate <= maxDate) {
-      const dayOfWeek = currentDate.getDay();
-      const dateStr = currentDate.toISOString().split('T')[0];
-      
-      // Solo lunes a sábado
-      if (dayOfWeek >= 1 && dayOfWeek <= 6) {
-        // Contar solicitudes confirmadas/pendientes para esta fecha
-        const solicitudesDelDia = solicitudes.filter((s) => {
-          const solicitudDate = new Date(s.fecha_solicitada + 'T00:00:00').toISOString().split('T')[0];
-          return solicitudDate === dateStr;
-        });
-
-        // Determinar máximo de bloques según el día
-        const maxBloques = dayOfWeek === 6 ? MAX_BLOQUES_SAB : MAX_BLOQUES_LV;
-
-        // Si hay menos solicitudes que el máximo, la fecha está disponible
-        if (solicitudesDelDia.length < maxBloques) {
-          dates.push(dateStr);
-        }
-      }
-
-      currentDate.setDate(currentDate.getDate() + 1);
-    }
-
-    setAvailableDates(dates);
-  };
-
   const calculateAvailableTimeSlots = (fecha: string) => {
-    const fechaObj = new Date(fecha + 'T00:00:00'); // Asegurar zona horaria correcta
+    const fechaObj = new Date(fecha + 'T00:00:00');
     const dayOfWeek = fechaObj.getDay();
-    
-    // Obtener bloques según el día
-    const bloquesDelDia = dayOfWeek === 6 ? BLOQUES_HORARIO_SAB : BLOQUES_HORARIO_LV;
-    
+    const isWorkingDay = dayOfWeek >= 1 && dayOfWeek <= 6; // lunes-sábado
+
+    const bloquesDelDia = BLOQUES_DIAGNOSTICO;
+
     // Obtener solicitudes para esta fecha (comparar solo la fecha sin hora)
-    const solicitudesDelDia = solicitudes.filter((s) => {
-      const solicitudDate = new Date(s.fecha_solicitada + 'T00:00:00').toISOString().split('T')[0];
-      return solicitudDate === fecha;
-    });
+    const solicitudesDelDia = isWorkingDay
+      ? solicitudes.filter((s) => {
+          const solicitudDate = new Date(s.fecha_solicitada + 'T00:00:00').toISOString().split('T')[0];
+          return solicitudDate === fecha;
+        })
+      : [];
 
-    // Obtener bloques ocupados
-    const bloquesOcupados = solicitudesDelDia.map((s) => s.bloque_horario).filter(Boolean);
+    const bloquesOcupados = isWorkingDay
+      ? solicitudesDelDia.map((s) => s.bloque_horario).filter(Boolean)
+      : BLOQUES_DIAGNOSTICO; // Día no laborable: marcar todos como ocupados
 
-    // Filtrar bloques disponibles
-    const bloquesDisponibles = bloquesDelDia.filter((bloque) => !bloquesOcupados.includes(bloque));
+    const bloquesStatus = bloquesDelDia.map((bloque) => ({
+      bloque,
+      ocupado: bloquesOcupados.includes(bloque),
+    }));
 
+    setTimeSlotsStatus(bloquesStatus);
+    const bloquesDisponibles = bloquesStatus.filter((slot) => !slot.ocupado).map((slot) => slot.bloque);
     setAvailableTimeSlots(bloquesDisponibles);
-  };
-
-  const isDateAvailable = (dateStr: string): boolean => {
-    return availableDates.includes(dateStr);
   };
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -299,7 +227,6 @@ const appendDriverHistory = async (entry: any) => {
       reader.onloadend = () => {
         const base64String = reader.result as string;
         setSelectedImages((prev) => [...prev, base64String]);
-        setImageFiles((prev) => [...prev, file]);
       };
       reader.readAsDataURL(file);
     });
@@ -307,7 +234,6 @@ const appendDriverHistory = async (entry: any) => {
 
   const removeImage = (index: number) => {
     setSelectedImages((prev) => prev.filter((_, i) => i !== index));
-    setImageFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
   const getCurrentEmployeeId = async (): Promise<number | null> => {
@@ -319,15 +245,15 @@ const appendDriverHistory = async (entry: any) => {
       }
 
       const { data, error } = await supabase
-        .from('empleado')
-        .select('id_empleado')
-        .eq('usuario_id', user.id_usuario)
-        .maybeSingle();
-
+          .from('empleado')
+          .select('id_empleado')
+          .eq('usuario_id', user.id_usuario)
+          .maybeSingle();
+        
       if (error) {
         throw error;
       }
-
+      
       return data?.id_empleado ?? null;
     } catch (error) {
       console.error('Error getting employee ID:', error);
@@ -360,7 +286,10 @@ const appendDriverHistory = async (entry: any) => {
       }
 
       // Verificar que el bloque horario esté disponible
-      if (!availableTimeSlots.includes(formData.bloque_horario)) {
+      const slotDisponible = timeSlotsStatus.some(
+        (slot) => slot.bloque === formData.bloque_horario && !slot.ocupado
+      );
+      if (!slotDisponible) {
         setError('El bloque horario seleccionado ya no está disponible. Por favor selecciona otro horario.');
         setSaving(false);
         return;
@@ -390,41 +319,41 @@ const appendDriverHistory = async (entry: any) => {
       let vehiculoId: number | null = null;
       let storedSolicitud: any = null;
       
-      const vehiculoAsignado = assignedVehicles.find(
-        (asignacion) =>
-          asignacion?.vehiculo?.patente_vehiculo?.toUpperCase?.() === patenteNormalizada
-      );
+        const vehiculoAsignado = assignedVehicles.find(
+          (asignacion) =>
+            asignacion?.vehiculo?.patente_vehiculo?.toUpperCase?.() === patenteNormalizada
+        );
 
-      vehiculoId = vehiculoAsignado?.vehiculo?.id_vehiculo || null;
+        vehiculoId = vehiculoAsignado?.vehiculo?.id_vehiculo || null;
 
-      if (!vehiculoId) {
-        setError('Selecciona un vehículo válido de tu lista asignada.');
-        setSaving(false);
-        return;
-      }
-      
-      const solicitudDB = {
-        ...solicitud,
-        vehiculo_id: vehiculoId,
-        patente_vehiculo: patenteNormalizada,
-      };
-      const { data: insertedSolicitud, error: dbError } = await supabase
-        .from('solicitud_diagnostico')
-        .insert([solicitudDB])
-        .select()
-        .single();
-
-      if (dbError) {
-        throw dbError;
-      } else if (insertedSolicitud) {
-        storedSolicitud = {
+        if (!vehiculoId) {
+          setError('Selecciona un vehículo válido de tu lista asignada.');
+          setSaving(false);
+          return;
+        }
+        
+        const solicitudDB = {
           ...solicitud,
-          ...insertedSolicitud,
+          vehiculo_id: vehiculoId,
           patente_vehiculo: patenteNormalizada,
-          bloque_horario_confirmado: insertedSolicitud.bloque_horario_confirmado || solicitud.bloque_horario,
-          fecha_confirmada: insertedSolicitud.fecha_confirmada || solicitud.fecha_solicitada,
-          empleado_id: insertedSolicitud.empleado_id || empleadoId,
         };
+        const { data: insertedSolicitud, error: dbError } = await supabase
+          .from('solicitud_diagnostico')
+          .insert([solicitudDB])
+          .select()
+          .single();
+
+        if (dbError) {
+        throw dbError;
+        } else if (insertedSolicitud) {
+          storedSolicitud = {
+            ...solicitud,
+            ...insertedSolicitud,
+            patente_vehiculo: patenteNormalizada,
+            bloque_horario_confirmado: insertedSolicitud.bloque_horario_confirmado || solicitud.bloque_horario,
+            fecha_confirmada: insertedSolicitud.fecha_confirmada || solicitud.fecha_solicitada,
+            empleado_id: insertedSolicitud.empleado_id || empleadoId,
+          };
       }
 
       if (!storedSolicitud) {
@@ -432,18 +361,18 @@ const appendDriverHistory = async (entry: any) => {
       }
 
       try {
-        await appendDriverHistory({
-          id: storedSolicitud.id_solicitud_diagnostico || Date.now(),
-          solicitud_diagnostico_id: storedSolicitud.id_solicitud_diagnostico || null,
-          patente_vehiculo: storedSolicitud.patente_vehiculo || patenteNormalizada,
-          tipo_problema: storedSolicitud.tipo_problema,
-          fecha_programada: storedSolicitud.fecha_confirmada || storedSolicitud.fecha_solicitada || formData.fecha_solicitada,
-          bloque_horario: storedSolicitud.bloque_horario_confirmado || storedSolicitud.bloque_horario || formData.bloque_horario,
-          estado_solicitud: storedSolicitud.estado_solicitud || 'pendiente_confirmacion',
-          empleado_id: storedSolicitud.empleado_id,
-          vehiculo_id: storedSolicitud.vehiculo_id || vehiculoId,
-          created_at: storedSolicitud.created_at || new Date().toISOString(),
-        });
+      await appendDriverHistory({
+        id: storedSolicitud.id_solicitud_diagnostico || Date.now(),
+        solicitud_diagnostico_id: storedSolicitud.id_solicitud_diagnostico || null,
+        patente_vehiculo: storedSolicitud.patente_vehiculo || patenteNormalizada,
+        tipo_problema: storedSolicitud.tipo_problema,
+        fecha_programada: storedSolicitud.fecha_confirmada || storedSolicitud.fecha_solicitada || formData.fecha_solicitada,
+        bloque_horario: storedSolicitud.bloque_horario_confirmado || storedSolicitud.bloque_horario || formData.bloque_horario,
+        estado_solicitud: storedSolicitud.estado_solicitud || 'pendiente_confirmacion',
+        empleado_id: storedSolicitud.empleado_id,
+        vehiculo_id: storedSolicitud.vehiculo_id || vehiculoId,
+        created_at: storedSolicitud.created_at || new Date().toISOString(),
+      });
       } catch (historyError) {
         console.warn('No se pudo registrar en driver_history:', historyError);
         // No interrumpir el flujo principal: la solicitud ya se creó.
@@ -468,7 +397,6 @@ const appendDriverHistory = async (entry: any) => {
         comentarios: '',
       });
       setSelectedImages([]);
-      setImageFiles([]);
 
       // Ocultar mensaje de éxito después de 5 segundos
       setTimeout(() => {
@@ -523,6 +451,15 @@ const appendDriverHistory = async (entry: any) => {
           Solicita una hora para el diagnóstico de tu vehículo. El coordinador revisará tu solicitud y la confirmará.
         </p>
       </div>
+
+      {loading && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-center gap-3">
+          <Clock className="text-blue-600" size={20} />
+          <p className="text-blue-700 text-sm">
+            Actualizando disponibilidad de fechas y horarios...
+          </p>
+        </div>
+      )}
 
       {success && (
         <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-center gap-3">
@@ -669,14 +606,15 @@ const appendDriverHistory = async (entry: any) => {
               required
             />
           </div>
-          {formData.fecha_solicitada && !isDateAvailable(formData.fecha_solicitada) && (
-            <p className="text-xs text-red-600 mt-1">
-              Esta fecha no tiene disponibilidad. Por favor selecciona otra fecha.
-            </p>
-          )}
-          {formData.fecha_solicitada && isDateAvailable(formData.fecha_solicitada) && (
-            <p className="text-xs text-gray-500 mt-1">
-              {formatDate(formData.fecha_solicitada)} - Disponible
+          {formData.fecha_solicitada && (
+            <p
+              className={`text-xs mt-1 ${
+                availableTimeSlots.length > 0 ? 'text-gray-600' : 'text-red-600'
+              }`}
+            >
+              {availableTimeSlots.length > 0
+                ? `${formatDate(formData.fecha_solicitada)} - Selecciona un bloque disponible.`
+                : `${formatDate(formData.fecha_solicitada)} - No operamos este día, por lo que no hay horarios disponibles.`}
             </p>
           )}
           <p className="text-xs text-gray-500 mt-1">
@@ -689,34 +627,56 @@ const appendDriverHistory = async (entry: any) => {
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Bloque Horario <span className="text-red-500">*</span>
           </label>
-          <div className="relative">
-            <Clock className="absolute left-3 top-3.5 text-gray-400" size={20} />
-            <select
-              value={formData.bloque_horario}
-              onChange={(e) => setFormData({ ...formData, bloque_horario: e.target.value })}
-              className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              required
-              disabled={!formData.fecha_solicitada || !isDateAvailable(formData.fecha_solicitada)}
-            >
-              <option value="">
-                {!formData.fecha_solicitada 
-                  ? 'Primero selecciona una fecha' 
-                  : !isDateAvailable(formData.fecha_solicitada)
-                  ? 'Fecha sin disponibilidad'
-                  : availableTimeSlots.length === 0
-                  ? 'No hay horarios disponibles'
-                  : 'Selecciona un horario'}
-              </option>
-              {availableTimeSlots.map((bloque) => (
-                <option key={bloque} value={bloque}>
-                  {bloque}
-                </option>
-              ))}
-            </select>
-          </div>
-          {formData.fecha_solicitada && availableTimeSlots.length > 0 && (
-            <p className="text-xs text-gray-500 mt-1">
-              {availableTimeSlots.length} bloque(s) disponible(s) para esta fecha
+
+          {!formData.fecha_solicitada && (
+            <p className="text-sm text-gray-500">Primero selecciona una fecha para ver los horarios.</p>
+          )}
+
+          {formData.fecha_solicitada && timeSlotsStatus.length === 0 && (
+            <p className="text-sm text-gray-500">Selecciona una fecha válida para ver los horarios.</p>
+          )}
+
+          {formData.fecha_solicitada && timeSlotsStatus.length > 0 && (
+            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {timeSlotsStatus.map((slot) => {
+                const isSelected = formData.bloque_horario === slot.bloque;
+                const baseClasses = slot.ocupado
+                  ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed'
+                  : 'border-gray-200 bg-white text-gray-700 hover:border-blue-500 hover:text-blue-600';
+                const selectedClasses =
+                  isSelected && !slot.ocupado ? 'ring-2 ring-blue-500 border-blue-500 text-blue-700' : '';
+
+                return (
+                  <button
+                    type="button"
+                    key={slot.bloque}
+                    disabled={slot.ocupado}
+                    onClick={() =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        bloque_horario: slot.ocupado ? prev.bloque_horario : slot.bloque,
+                      }))
+                    }
+                    className={`flex flex-col items-start gap-1 px-4 py-3 rounded-xl border transition ${baseClasses} ${selectedClasses}`}
+                  >
+                    <div className="flex items-center gap-2 text-base font-semibold">
+                      <Clock size={18} />
+                      <span>{slot.bloque}</span>
+                    </div>
+                    <span className="text-xs font-medium">
+                      {slot.ocupado ? 'Reservado' : isSelected ? 'Seleccionado' : 'Disponible'}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {formData.fecha_solicitada && timeSlotsStatus.length > 0 && (
+            <p className="text-xs text-gray-500 mt-2">
+              {availableTimeSlots.length > 0
+                ? `${availableTimeSlots.length} bloque(s) disponibles para esta fecha.`
+                : 'Esta fecha no tiene bloques disponibles por ahora.'}
             </p>
           )}
         </div>
@@ -788,7 +748,7 @@ const appendDriverHistory = async (entry: any) => {
         <div className="flex gap-3 justify-end pt-4 border-t border-gray-200">
           <button
             type="submit"
-            disabled={saving || !isDateAvailable(formData.fecha_solicitada)}
+            disabled={saving || !formData.fecha_solicitada || availableTimeSlots.length === 0}
             className="px-6 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2"
           >
             {saving ? (
