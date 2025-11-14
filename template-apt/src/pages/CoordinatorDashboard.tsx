@@ -627,6 +627,10 @@ const workOrdersCounts = {
     try {
       setLoading(true);
 
+      const estadosFilter = ESTADOS_AGENDA_PERMITIDOS.map(
+        (estado) => `estado_solicitud.eq.${estado}`
+      ).join(',');
+
       const [
         { data: solicitudesDb, error: solicitudesError },
         { data: empleadosDb, error: empleadosError },
@@ -638,7 +642,7 @@ const workOrdersCounts = {
           .select(
             'id_solicitud_diagnostico, fecha_confirmada, fecha_solicitada, bloque_horario_confirmado, bloque_horario, tipo_problema, prioridad, estado_solicitud, empleado_id, vehiculo_id, orden_trabajo_id'
           )
-          .in('estado_solicitud', ESTADOS_AGENDA_PERMITIDOS)
+          .or(estadosFilter || 'estado_solicitud.eq.confirmada')
           .order('fecha_confirmada', { ascending: true }),
               supabase.from('empleado').select('id_empleado, nombre, apellido_paterno'),
               supabase.from('vehiculo').select('id_vehiculo, patente_vehiculo'),
