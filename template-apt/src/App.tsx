@@ -117,10 +117,8 @@ function AppContent() {
             <Route path="/coordinator-reportes" element={<CoordinatorDashboard activeSection="reportes" />} />
             <Route path="/workshop-agenda" element={<WorkshopChiefDashboard activeSection="agenda" />} />
             <Route path="/workshop-checklists" element={<WorkshopChiefDashboard activeSection="checklists" />} />
-            <Route path="/workshop-asignacion" element={<WorkshopChiefDashboard activeSection="asignacion" />} />
             <Route path="/workshop-reparacion" element={<WorkshopChiefDashboard activeSection="reparacion" />} />
             <Route path="/workshop-cierre" element={<WorkshopChiefDashboard activeSection="cierre" />} />
-            <Route path="/workshop-carga" element={<WorkshopChiefDashboard activeSection="carga" />} />
             <Route path="/supervisor-tablero" element={<SupervisorDashboard activeSection="tablero" />} />
             <Route path="/supervisor-diagnosticos" element={<SupervisorDashboard activeSection="diagnosticos" />} />
             <Route path="/supervisor-emergencias" element={<SupervisorDashboard activeSection="emergencias" />} />

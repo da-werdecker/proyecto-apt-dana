@@ -86,12 +86,12 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
   return (
     <ToastContext.Provider value={contextValue}>
       {children}
-      <div className="fixed bottom-6 right-6 z-50 flex w-full max-w-md flex-col gap-3 px-4 sm:px-0">
+      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 md:translate-x-0 md:right-6 md:left-auto z-[12000] flex w-full max-w-md flex-col gap-3 px-4 sm:px-0 pointer-events-none">
         {toasts.map((toast) => (
           <div
             key={toast.id}
             role="status"
-            className={`flex items-start gap-3 rounded-xl border-l-4 bg-white/95 p-4 shadow-lg shadow-slate-300/40 backdrop-blur ${TYPE_STYLES[toast.type]}`}
+            className={`flex items-start gap-3 rounded-xl border-l-4 bg-white/95 p-4 shadow-lg shadow-slate-300/40 backdrop-blur ${TYPE_STYLES[toast.type]} pointer-events-auto`}
           >
             <span className="mt-1">{ICONS[toast.type]}</span>
             <div className="flex-1">

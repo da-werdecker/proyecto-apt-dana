@@ -13,7 +13,7 @@ const PRIORIDADES_OT = [
 ];
 
 interface WorkshopChiefDashboardProps {
-  activeSection?: 'agenda' | 'checklists' | 'plan' | 'asignacion' | 'reparacion' | 'cierre' | 'carga';
+  activeSection?: 'agenda' | 'checklists' | 'plan' | 'reparacion' | 'cierre';
 }
 
 export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: WorkshopChiefDashboardProps) {
@@ -75,6 +75,12 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
       .join(' ')
       .trim();
     return nombre || `Mecánico #${mechanic?.id_empleado ?? 'N/A'}`;
+  };
+
+  const getMechanicDisplayName = (mechanicId?: number | null) => {
+    if (!mechanicId) return null;
+    const mechanic = mechanics.find((m: any) => m.id_empleado === mechanicId);
+    return mechanic ? getMechanicName(mechanic) : `Mecánico #${mechanicId}`;
   };
 
   const mechanicOptions = useMemo(
@@ -168,7 +174,7 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
       // Cargar datos base (solicitudes + órdenes)
       let solicitudes: any[] = readLocal('apt_solicitudes_diagnostico', []);
       let ordenes: any[] = readLocal('apt_ordenes_trabajo', []);
-      const historialAutorizados = readLocal('apt_historial_autorizados', []);
+      let historialAutorizados = readLocal('apt_historial_autorizados', []);
       const empleadosLocal = readLocal('apt_empleados', []);
       const checklistsGuardados = readLocal('apt_checklists_diagnostico', []);
       let ordenesActualizadas = [...ordenes];
@@ -178,6 +184,18 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
 
       if (hasEnv) {
         try {
+          const { data: historialDb, error: historialError } = await supabase
+            .from('historial_accesos')
+            .select('*')
+            .order('created_at', { ascending: false, nullsLast: true });
+
+          if (historialError) {
+            console.error('⚠️ Error cargando historial de ingresos:', historialError);
+          } else if (Array.isArray(historialDb)) {
+            historialAutorizados = historialDb;
+            writeLocal('apt_historial_autorizados', historialDb);
+          }
+
           // Cargar solicitudes confirmadas y pendientes desde Supabase
           const { data: solicitudesDb, error: solicitudesError } = await supabase
             .from('solicitud_diagnostico')
@@ -213,60 +231,16 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
           }
 
           // Cargar órdenes de trabajo relacionadas con diagnósticos
-          const { data: ordenesDb, error: ordenesError } = await supabase
-            .from('orden_trabajo')
-            .select(
-              `
-                id_orden_trabajo,
-                descripcion_ot,
-                estado_ot,
-                prioridad_ot,
-                empleado_id,
-                vehiculo_id,
-                solicitud_diagnostico_id,
-                checklist_id,
-                mecanico_apoyo_ids,
-                confirmado_ingreso,
-                fecha_programada_reparacion,
-                hora_programada_reparacion,
-                estado_reparacion,
-                hora_confirmada,
-                fecha_inicio_ot,
-                fecha_cierre_ot,
-          estado_cierre,
-          fecha_cierre_tecnico,
-              detalle_reparacion,
-                created_at,
-              avances:avance_ot(
-                id_avance_ot,
-                descripcion_trabajo,
-                hora_inicio,
-                hora_fin,
-                observaciones,
-                fotos,
-                mecanico_id,
-                created_at
-              ),
-                solicitud:solicitud_diagnostico_id(
-                  id_solicitud_diagnostico,
-                  fecha_confirmada,
-                  fecha_solicitada,
-                  bloque_horario_confirmado,
-                  bloque_horario,
-                  tipo_problema,
-                  prioridad,
-                  estado_solicitud,
-                  empleado_id,
-                  vehiculo_id,
-                  patente_vehiculo,
-                  tipo_trabajo,
-                  mecanico_id
-                ),
-                vehiculo:vehiculo_id(
-                  patente_vehiculo
-                )
-              `
-            );
+        const { data: ordenesDb, error: ordenesError } = await supabase
+          .from('orden_trabajo')
+          .select(
+            `
+              *,
+              avances:avance_ot(*),
+              solicitud:solicitud_diagnostico_id(*),
+              vehiculo:vehiculo_id(patente_vehiculo)
+            `
+          );
 
           if (!ordenesError && Array.isArray(ordenesDb)) {
             const ordenesIds = ordenesDb.map((o: any) => o.id_orden_trabajo).filter(Boolean);
@@ -277,20 +251,17 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
               try {
                 const { data: avancesDb, error: avancesError } = await supabase
                   .from('avance_ot')
-                  .select(
-                    `
-                      id_avance_ot,
-                      orden_trabajo_id,
-                      descripcion_trabajo,
-                      observaciones,
-                      hora_inicio,
-                      hora_fin,
-                      fotos,
-                      mecanico_id,
-                      created_at,
-                      estado_ot
-                    `
-                  )
+                  .select(`
+                    id_avance_ot,
+                    orden_trabajo_id,
+                    descripcion_trabajo,
+                    observaciones,
+                    hora_inicio,
+                    hora_fin,
+                    fotos,
+                    mecanico_id,
+                    created_at
+                  `)
                   .in('orden_trabajo_id', ordenesIds)
                   .order('created_at', { ascending: false });
 
@@ -298,8 +269,12 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
                   console.error('⚠️ Error cargando avances de Supabase:', avancesError);
                 } else if (Array.isArray(avancesDb)) {
                   avancesDb.forEach((avance: any) => {
+                    const avanceNormalizado = {
+                      ...avance,
+                      fotos: normalizeFotosField(avance.fotos),
+                    };
                     const list = avancesMap.get(avance.orden_trabajo_id) || [];
-                    list.push(avance);
+                    list.push(avanceNormalizado);
                     avancesMap.set(avance.orden_trabajo_id, list);
                   });
                 }
@@ -340,8 +315,12 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
             }
 
             ordenes = ordenesDb.map((o: any) => {
-              const avances =
+              const avancesRaw =
                 Array.isArray(o.avances) && o.avances.length > 0 ? o.avances : avancesMap.get(o.id_orden_trabajo) || [];
+              const avances = avancesRaw.map((avance: any) => ({
+                ...avance,
+                fotos: normalizeFotosField(avance.fotos),
+              }));
               const aprobacion = aprobacionesMap.get(o.id_orden_trabajo) || null;
 
               return {
@@ -487,7 +466,7 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
           fecha_confirmada: solicitud?.fecha_confirmada || orden.fecha_inicio_ot,
           bloque_horario: solicitud?.bloque_horario_confirmado || solicitud?.bloque_horario || 'N/A',
           ya_ingreso: yaIngreso,
-          ingreso_hora: ingresoRegistrado?.hora_busqueda || ingresoRegistradoDirecto?.hora || null,
+          ingreso_hora: getHistorialHora(ingresoRegistrado) || ingresoRegistradoDirecto?.hora || null,
           prioridad_ot: prioridadFinal,
           checklist_id: checklistIdFinal,
           mecanico_apoyo_ids: orden.mecanico_apoyo_ids || [],
@@ -574,6 +553,18 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
       setDiagnosticosVencidos(diagnosticosPasados);
       
       // Cargar mecánicos (empleados con cargo 'Mecánico' o rol mechanic)
+      const obtenerNombreEmpleado = (empleado: any) => {
+        if (!empleado) return null;
+        return [
+          empleado.nombre || '',
+          empleado.apellido_paterno || '',
+          empleado.apellido_materno || '',
+        ]
+          .join(' ')
+          .replace(/\s+/g, ' ')
+          .trim() || null;
+      };
+
       let mechanicsDisponibles: any[] = Array.isArray(empleadosData)
         ? empleadosData.filter((e: any) => {
             const cargoNombreLocal = String(
@@ -626,10 +617,17 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
           if (Array.isArray(checklistsDb)) {
             checklistsRemotos = checklistsDb.map((row: any) => {
               const datos = row.datos || {};
+              const empleadoChecklist = empleadosData.find(
+                (e: any) => e.id_empleado === row.empleado_id,
+              );
               return {
                 id: row.id_checklist,
                 orden_trabajo_id: row.orden_trabajo_id,
                 empleado_id: row.empleado_id || null,
+                empleado_nombre:
+                  row.empleado_nombre ||
+                  datos.mecanico_nombre ||
+                  obtenerNombreEmpleado(empleadoChecklist),
                 fecha_creacion: row.created_at,
                 fecha_actualizacion: row.updated_at,
                 clasificacion_prioridad: row.clasificacion_prioridad || datos.clasificacion_prioridad || 'normal',
@@ -643,8 +641,25 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
         }
       }
 
+      const enrichChecklist = (check: any) => {
+        if (!check) return null;
+        const empleadoChecklist = check.empleado_id
+          ? empleadosData.find((e: any) => e.id_empleado === check.empleado_id)
+          : null;
+        const nombreEmpleado =
+          check.empleado_nombre ||
+          check.mecanico_nombre ||
+          obtenerNombreEmpleado(empleadoChecklist);
+        return {
+          ...check,
+          empleado_nombre: nombreEmpleado || null,
+        };
+      };
+
       const checklistMap = new Map<number, any>();
-      const todosChecklists = [...checklistsRemotos, ...checklistsGuardados];
+      const todosChecklists = [...checklistsRemotos, ...checklistsGuardados]
+        .map(enrichChecklist)
+        .filter(Boolean);
       todosChecklists.forEach((check: any) => {
         const key = check.orden_trabajo_id;
         if (!key) return;
@@ -675,16 +690,20 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
     // Buscar si existe un checklist guardado para esta OT
     const checklistExistente = checklists.find((c: any) => c.orden_trabajo_id === orden.id_orden_trabajo);
     
-    const principalId =
-      orden.solicitud?.mecanico_id ||
-      orden.solicitud_detalle?.mecanico_id ||
-      orden.empleado_id ||
-      null;
-    const principalMechanic = mechanics.find((m: any) => m.id_empleado === principalId) || null;
+    const principalCandidates = [
+      normalizeMechanicId(orden.empleado_id),
+      normalizeMechanicId(orden.asignacion_mecanico_id),
+      normalizeMechanicId(orden.solicitud?.mecanico_id),
+      normalizeMechanicId(orden.solicitud_detalle?.mecanico_id),
+    ];
+    const principalId = principalCandidates.find((id) => id !== null) ?? null;
+    const principalMechanic = principalId
+      ? mechanics.find((m: any) => m.id_empleado === principalId) || null
+      : null;
     const apoyos = Array.isArray(orden.mecanico_apoyo_ids)
-      ? (orden.mecanico_apoyo_ids as number[]).filter(
-          (id) => typeof id === 'number' && id && id !== principalId,
-        )
+      ? (orden.mecanico_apoyo_ids as any[])
+          .map((id) => normalizeMechanicId(id))
+          .filter((id): id is number => Boolean(id) && id !== principalId)
       : [];
     
     setFormData({
@@ -788,6 +807,8 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
   const handleSaveOT = async () => {
     if (!selectedOT || modalReadOnly) return;
 
+    const isPendienteContext = checklistTab === 'pendientes' && !modalReadOnly;
+
     if (!formData.mecanico_principal_id) {
       showToast({
         type: 'warning',
@@ -804,10 +825,29 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
       return;
     }
 
-    if (!formData.fecha_programada_reparacion || !formData.hora_programada_reparacion) {
+    if (isPendienteContext && !formData.checklist_id) {
       showToast({
         type: 'warning',
-        message: 'Debes agendar la fecha y hora de la reparación antes de guardar.',
+        message: 'Completa y adjunta el checklist de diagnóstico antes de guardar la OT.',
+      });
+      return;
+    }
+
+    if (isPendienteContext && !formData.confirmado_ingreso) {
+      showToast({
+        type: 'warning',
+        message: 'Debes confirmar que el vehículo ingresó al taller antes de guardar la OT.',
+      });
+      return;
+    }
+
+    if (
+      isPendienteContext &&
+      (!formData.fecha_programada_reparacion || !formData.hora_programada_reparacion)
+    ) {
+      showToast({
+        type: 'warning',
+        message: 'Define fecha y hora de reparación antes de guardar la orden.',
       });
       return;
     }
@@ -957,36 +997,48 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
       }
 
       if (upserted) {
-      setChecklists((prev) => {
-        const filtered = prev.filter((c: any) => c.orden_trabajo_id !== selectedOT.id_orden_trabajo);
-        return [
-          ...filtered,
-          {
+        setChecklists((prev) => {
+          const filtered = prev.filter((c: any) => c.orden_trabajo_id !== selectedOT.id_orden_trabajo);
+          return [
+            ...filtered,
+            {
               ...upserted,
               id: upserted.id_checklist,
-          },
-        ];
-      });
-      
+            },
+          ];
+        });
+
         setFormData((prev) => ({
           ...prev,
           checklist_id: upserted.id_checklist ? String(upserted.id_checklist) : prev.checklist_id,
           prioridad_ot: checklistData.clasificacion_prioridad || prev.prioridad_ot,
         }));
 
-            await supabase
-              .from('orden_trabajo')
-              .update({
+        setSelectedOT((prev) =>
+          prev
+            ? {
+                ...prev,
+                checklist_id: upserted.id_checklist,
+                prioridad_ot: checklistData.clasificacion_prioridad || prev.prioridad_ot,
+              }
+            : prev,
+        );
+
+        await supabase
+          .from('orden_trabajo')
+          .update({
             checklist_id: upserted.id_checklist,
-                prioridad_ot: checklistData.clasificacion_prioridad || selectedOT.prioridad_ot,
-              })
-              .eq('id_orden_trabajo', selectedOT.id_orden_trabajo);
+            prioridad_ot: checklistData.clasificacion_prioridad || selectedOT.prioridad_ot,
+          })
+          .eq('id_orden_trabajo', selectedOT.id_orden_trabajo);
       }
 
       setShowChecklist(false);
+      setModalOpen(true);
+      setModalReadOnly(false);
       showToast({
         type: 'success',
-        message: 'Checklist guardado exitosamente.',
+        message: 'Checklist guardado exitosamente. Revisa la orden para completar los demás campos.',
       });
     } catch (error) {
       console.error('Error guardando checklist:', error);
@@ -1045,6 +1097,54 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
     if (normalized.includes('finaliza')) return 'finalizada';
     return 'en_reparacion';
   };
+
+const normalizeMechanicId = (value: any): number | null => {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const normalizeFotosField = (value: any): string[] => {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => (typeof item === 'string' ? item.trim() : ''))
+      .filter((item) => Boolean(item));
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map((item) => (typeof item === 'string' ? item.trim() : ''))
+          .filter((item) => Boolean(item));
+      }
+    } catch {
+      // Not JSON, continue with fallback parsing
+    }
+    if (trimmed.includes(',')) {
+      return trimmed
+        .split(',')
+        .map((item) => item.trim())
+        .filter((item) => Boolean(item));
+    }
+    return [trimmed];
+  }
+  return [];
+};
+
+const getHistorialHora = (registro: any) => {
+  return (
+    registro?.hora_busqueda ||
+    registro?.hora ||
+    registro?.hora_ingreso ||
+    registro?.hora_registro ||
+    (registro?.created_at ? new Date(registro.created_at).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }) : null) ||
+    null
+  );
+};
 
   const selectedDataState = (ordenId: number) => {
     try {
@@ -1108,6 +1208,14 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
     return Number.isNaN(date.getTime()) ? null : date;
   };
 
+  const normalizeProgressLog = (log: any) => {
+    if (!log) return null;
+    return {
+      ...log,
+      fotos: normalizeFotosField(log.fotos),
+    };
+  };
+
   const readProgressSummary = (ordenId: number) => {
     try {
       if (hasEnv) {
@@ -1120,7 +1228,7 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
           (a: any, b: any) =>
             (getAvanceTimestamp(b)?.getTime() || 0) - (getAvanceTimestamp(a)?.getTime() || 0)
         );
-        return sorted[0] || null;
+        return normalizeProgressLog(sorted[0]) || null;
       }
 
       const progresos = readLocal('apt_progresos_mecanico', []);
@@ -1131,7 +1239,7 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
           (a: any, b: any) =>
             (getAvanceTimestamp(b)?.getTime() || 0) - (getAvanceTimestamp(a)?.getTime() || 0)
         )[0];
-      return latest || null;
+      return normalizeProgressLog(latest) || null;
     } catch {
       return null;
     }
@@ -1921,6 +2029,14 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
                             </div>
 
                             {checklist && (
+                              (() => {
+                                const datos = checklist.datos || {};
+                                const mechanicLabel =
+                                  datos.mecanico_nombre ||
+                                  getMechanicDisplayName(datos.mecanico_principal_id) ||
+                                  getMechanicDisplayName(checklist.empleado_id) ||
+                                  'Sin registro';
+                                return (
                               <div className="rounded-2xl border border-emerald-100 bg-white p-4 text-sm text-slate-700 shadow-inner shadow-emerald-100/40">
                                 <div className="flex items-center gap-2 text-emerald-700">
                                   <ClipboardList size={16} />
@@ -1934,18 +2050,40 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
                                         checklist.clasificacion_prioridad}
                                     </p>
                                   )}
-                                  {checklist.empleado_id && (
-                                    <p>
-                                      <strong>Mecánico que registró:</strong> #{checklist.empleado_id}
-                                    </p>
-                                  )}
+                                  <p>
+                                    <strong>Mecánico que registró:</strong> {mechanicLabel}
+                                    {checklist.empleado_id ? ` (ID ${checklist.empleado_id})` : ''}
+                                  </p>
                                   {checklist.observaciones && (
                                     <p className="sm:col-span-2">
                                       <strong>Observaciones:</strong> {checklist.observaciones}
                                     </p>
                                   )}
+                                  {datos.hallazgos_principales && (
+                                    <p className="sm:col-span-2">
+                                      <strong>Hallazgos:</strong> {datos.hallazgos_principales}
+                                    </p>
+                                  )}
+                                  {datos.repuestos_preliminares && (
+                                    <p>
+                                      <strong>Repuestos preliminares:</strong> {datos.repuestos_preliminares}
+                                    </p>
+                                  )}
+                                  {datos.horas_estimadas && (
+                                    <p>
+                                      <strong>Horas estimadas:</strong> {datos.horas_estimadas}
+                                    </p>
+                                  )}
+                                  {datos.recomendacion && (
+                                    <p>
+                                      <strong>Recomendación:</strong>{' '}
+                                      {datos.recomendacion === 'apto' ? 'Apto para circular' : 'No apto'}
+                                    </p>
+                                  )}
                                 </div>
                               </div>
+                                );
+                              })()
                             )}
                           </div>
 
@@ -2967,19 +3105,44 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
             )}
 
             {!modalReadOnly && (
-            <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-              <input
-                type="checkbox"
-                id="confirmado_ingreso"
-                checked={formData.confirmado_ingreso}
-                onChange={(e) => setFormData({ ...formData, confirmado_ingreso: e.target.checked })}
-                className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500"
-              />
-                <label htmlFor="confirmado_ingreso" className="flex items-center gap-2 text-sm font-medium">
-                <CheckCircle className="text-green-600" size={18} />
-                Confirmar que el vehículo ya ingresó al taller (guardia lo registró)
-              </label>
-            </div>
+              <div
+                className={`flex items-center gap-3 p-3 rounded-lg border transition ${
+                  (selectedOT?.ya_ingreso || formData.confirmado_ingreso)
+                    ? 'border-emerald-300 bg-emerald-50'
+                    : 'border-gray-200 bg-gray-50'
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  id="confirmado_ingreso"
+                  checked={selectedOT?.ya_ingreso ? true : formData.confirmado_ingreso}
+                  onChange={(e) => setFormData({ ...formData, confirmado_ingreso: e.target.checked })}
+                  className="w-5 h-5 text-emerald-600 rounded focus:ring-emerald-500"
+                  disabled={Boolean(selectedOT?.ya_ingreso)}
+                />
+                <label htmlFor="confirmado_ingreso" className="flex flex-col text-sm font-medium">
+                  <span
+                    className={`flex items-center gap-2 ${
+                      selectedOT?.ya_ingreso || formData.confirmado_ingreso ? 'text-emerald-700' : 'text-gray-700'
+                    }`}
+                  >
+                    <CheckCircle
+                      className={
+                        selectedOT?.ya_ingreso || formData.confirmado_ingreso ? 'text-emerald-600' : 'text-gray-400'
+                      }
+                      size={18}
+                    />
+                    {selectedOT?.ya_ingreso
+                      ? '✓ Guardia confirmó el ingreso'
+                      : 'Confirmar que el guardia registró el ingreso del vehículo'}
+                  </span>
+                  <span className="text-xs text-gray-500">
+                    {selectedOT?.ya_ingreso
+                      ? 'Este vehículo fue autorizado en portería.'
+                      : 'Si aún no llega, espera el registro del guardia o confírmalo manualmente.'}
+                  </span>
+                </label>
+              </div>
             )}
 
             {!modalReadOnly && (
@@ -3044,18 +3207,18 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
               )}
             </div>
 
-            <div>
+            <div className="relative z-[9999]">
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Checklist de Diagnóstico
               </label>
               {formData.checklist_id ? (
-                <div className="p-3 bg-green-50 rounded-lg mb-2">
+                <div className="p-3 bg-green-50 rounded-lg mb-2 shadow-sm border border-green-100 relative z-10">
                   <p className={`text-sm ${modalReadOnly ? 'text-green-600' : 'text-green-700'}`}>
                     ✓ Checklist completado (ID: {formData.checklist_id})
                   </p>
                 </div>
               ) : (
-                <div className="p-3 bg-yellow-50 rounded-lg mb-2">
+                <div className="p-3 bg-yellow-50 rounded-lg mb-2 shadow-sm border border-yellow-200 relative z-10">
                   <p className={`text-sm ${modalReadOnly ? 'text-yellow-600' : 'text-yellow-700'}`}>
                     ⚠ Checklist pendiente de completar
                   </p>
@@ -3064,7 +3227,7 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
               <button
                 type="button"
                 onClick={handleOpenChecklist}
-                className={`w-full px-4 py-2 rounded-lg transition-colors flex items-center justify-center gap-2 ${
+                className={`w-full px-4 py-2 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-sm ${
                   modalReadOnly
                     ? 'bg-blue-100 text-blue-700 hover:bg-blue-200'
                     : 'bg-blue-600 text-white hover:bg-blue-700'
@@ -3082,7 +3245,7 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
 
             {!modalReadOnly && renderResumenTecnico()}
 
-            <div className="flex justify-end gap-3 pt-4 border-t">
+            <div className="flex flex-col-reverse sm:flex-row justify-center gap-3 pt-4 border-t">
               <button
                 onClick={() => {
                   setModalOpen(false);

@@ -59,10 +59,8 @@ export default function Sidebar({ currentPage, onNavigate, isOpen = true, onClos
   const workshopChiefSubmenuItems = [
     { id: 'workshop-agenda', label: 'Agenda de Diagnósticos', icon: Calendar },
     { id: 'workshop-checklists', label: 'Checklists de Diagnóstico', icon: ClipboardList },
-    { id: 'workshop-asignacion', label: 'Asignación de Mecánicos', icon: Users },
     { id: 'workshop-reparacion', label: 'OT en Reparación', icon: Settings },
     { id: 'workshop-cierre', label: 'Cierre Técnico de OT', icon: CheckCircle },
-    { id: 'workshop-carga', label: 'Carga del Taller', icon: Activity },
   ];
 
   const supervisorSubmenuItems = [

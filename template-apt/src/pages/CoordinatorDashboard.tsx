@@ -637,14 +637,12 @@ const workOrdersCounts = {
       ] = await Promise.all([
         supabase
           .from('solicitud_diagnostico')
-          .select(
-            'id_solicitud_diagnostico, fecha_confirmada, fecha_solicitada, bloque_horario_confirmado, bloque_horario, tipo_problema, prioridad, estado_solicitud, empleado_id, vehiculo_id, orden_trabajo_id'
-          )
+          .select('*')
           .in('estado_solicitud', ESTADOS_AGENDA_PERMITIDOS)
           .order('fecha_confirmada', { ascending: true }),
               supabase.from('empleado').select('id_empleado, nombre, apellido_paterno'),
               supabase.from('vehiculo').select('id_vehiculo, patente_vehiculo'),
-        supabase.from('orden_trabajo').select('id_orden_trabajo, solicitud_diagnostico_id, mecanico_id, estado_ot'),
+        supabase.from('orden_trabajo').select('id_orden_trabajo, solicitud_diagnostico_id, empleado_id, estado_ot'),
             ]);
 
       if (solicitudesError) throw solicitudesError;
@@ -2107,33 +2105,7 @@ const workOrdersCounts = {
               </select>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Box (Opcional)
-              </label>
-              <input
-                type="number"
-                value={formData.box_id}
-                onChange={(e) => setFormData({ ...formData, box_id: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                placeholder="Número de box"
-                min="1"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Mecánico Asignado (Opcional)
-              </label>
-              <input
-                type="number"
-                value={formData.mecanico_id}
-                onChange={(e) => setFormData({ ...formData, mecanico_id: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                placeholder="ID del mecánico"
-                min="1"
-              />
-            </div>
+            {/* Campos opcionales (box y mecánico) eliminados */}
 
             {error && (
               <div className="bg-red-50 border border-red-200 rounded-lg p-3">
