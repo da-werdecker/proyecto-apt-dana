@@ -45,11 +45,8 @@ export default function Login() {
     if (!trimmedUsername) {
       setUsernameError('Ingresa tu usuario o RUT.');
       isValid = false;
-    } else if (
-      !/^[a-zA-Z0-9._-]{3,50}$/.test(trimmedUsername) &&
-      !isValidRut(trimmedUsername)
-    ) {
-      setUsernameError('Usa un usuario válido o un RUT con dígito verificador (Ej: 12.345.678-9).');
+    } else if (!/^[a-zA-Z0-9._-]{3,50}$/.test(trimmedUsername)) {
+      setUsernameError('El usuario solo puede tener letras, números, puntos o guiones (3-50).');
       isValid = false;
     } else {
       setUsernameError('');
@@ -81,7 +78,11 @@ export default function Login() {
       await login(username.trim(), password.trim());
       navigate('/');
     } catch (err) {
-      setError('Usuario o contraseña incorrectos');
+      if (err instanceof Error && err.message === 'Usuario inactivo') {
+        setError('Tu usuario está bloqueado. Contacta a tu supervisor para reactivarlo.');
+      } else {
+        setError('Usuario o contraseña incorrectos');
+      }
     } finally {
       setLoading(false);
     }
@@ -158,7 +159,7 @@ export default function Login() {
                     ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20'
                     : 'border-slate-200 focus:border-blue-500 focus:ring-blue-500/20'
                 }`}
-                placeholder="Ej: 12.345.678-9"
+                placeholder="Ej: admin.taller"
                 aria-invalid={Boolean(usernameError)}
                 aria-describedby="username-help username-error"
               />
@@ -212,30 +213,10 @@ export default function Login() {
             </button>
           </form>
 
-          <div className="mt-10 space-y-4 text-sm text-slate-600">
-            <div>
-              <Link to="/" className="font-semibold text-blue-600 hover:text-blue-700">
-                ← Volver al inicio
-              </Link>
-            </div>
-
-            <div>
-              <p className="mb-2 font-semibold text-slate-700">Accesos de demostración:</p>
-              <div className="space-y-2 text-xs text-slate-500">
-                <div className="flex justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                  <span>Administrador</span>
-                  <span className="font-mono text-slate-700">admin / admin123</span>
-                </div>
-                <div className="flex justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                  <span>Planificador</span>
-                  <span className="font-mono text-slate-700">planner / planner123</span>
-                </div>
-                <div className="flex justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                  <span>Chofer</span>
-                  <span className="font-mono text-slate-700">driver1 / driver123</span>
-                </div>
-              </div>
-            </div>
+          <div className="mt-10">
+            <Link to="/" className="text-sm font-semibold text-blue-600 hover:text-blue-700">
+              ← Volver al inicio
+            </Link>
           </div>
         </div>
       </div>

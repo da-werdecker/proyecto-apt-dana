@@ -70,13 +70,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!usuarioLocal) {
         const rutNormalizado = normalizeRut(normalizedUsername);
         if (rutNormalizado) {
-        const empleadoPorRut = empleadosLS.find((e: any) => {
+          const empleadoPorRut = empleadosLS.find((e: any) => {
             if (!e.rut_empleado && !e.rut) return false;
             const rutEmpleado = e.rut_empleado || e.rut;
             return normalizeRut(rutEmpleado) === rutNormalizado;
-        });
-        
-        if (empleadoPorRut) {
+          });
+          
+          if (empleadoPorRut) {
             usuarioLocal = usuariosLS.find(
               (u: any) =>
                 u.estado_usuario &&
@@ -88,6 +88,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       return usuarioLocal ? buildUsuario(usuarioLocal) : null;
+    };
+
+    const isBlockedLocalUser = (): boolean => {
+      const usuariosLS = JSON.parse(localStorage.getItem('apt_usuarios') || '[]');
+      const empleadosLS = JSON.parse(localStorage.getItem('apt_empleados') || '[]');
+
+      const matchDirecto = usuariosLS.find(
+        (u: any) => typeof u.usuario === 'string' && u.usuario.toLowerCase() === usernameLower
+      );
+      if (matchDirecto && matchDirecto.estado_usuario === false) {
+        return true;
+      }
+
+      const rutNormalizado = normalizeRut(normalizedUsername);
+      if (rutNormalizado) {
+        const empleado = empleadosLS.find((e: any) => {
+          if (!e.rut_empleado && !e.rut) return false;
+          const rutEmpleado = e.rut_empleado || e.rut;
+          return normalizeRut(rutEmpleado) === rutNormalizado;
+        });
+        if (empleado) {
+          const usuarioRelacionado = usuariosLS.find((u: any) => u.id_usuario === empleado.usuario_id);
+          if (usuarioRelacionado && usuarioRelacionado.estado_usuario === false) {
+            return true;
+          }
+        }
+      }
+
+      return false;
     };
 
     const resolveDemoUser = (): Usuario | null => {
@@ -117,11 +146,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     const findSupabaseUser = async (): Promise<Usuario | null> => {
-      const { data: usuarioDirecto, error: usuarioError } = await supabase
+      const { data: usuarioCoincidencia, error: usuarioError } = await supabase
         .from('usuario')
         .select('*')
         .ilike('usuario', normalizedUsername)
-        .eq('estado_usuario', true)
         .limit(1)
         .maybeSingle();
 
@@ -129,7 +157,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw usuarioError;
       }
 
-      let candidato = usuarioDirecto as Usuario | null;
+      if (usuarioCoincidencia && usuarioCoincidencia.estado_usuario === false) {
+        throw new Error('Usuario inactivo');
+      }
+
+      let candidato = usuarioCoincidencia as Usuario | null;
 
       if (!candidato || (candidato.clave || '').trim() !== normalizedPassword) {
         const rutNormalizado = normalizeRut(normalizedUsername);
@@ -150,6 +182,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           });
 
           if (coincidencia?.usuario) {
+            if (coincidencia.usuario.estado_usuario === false) {
+              throw new Error('Usuario inactivo');
+            }
             candidato = coincidencia.usuario as Usuario;
           }
         }
@@ -173,6 +208,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (localUser) {
         persistUser(localUser);
         return;
+      }
+
+      if (isBlockedLocalUser()) {
+        throw new Error('Usuario inactivo');
       }
 
       const demoUser = resolveDemoUser();
@@ -200,10 +239,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       persistUser({ ...supabaseUser, ultima_conexion: ultimaConexion });
     } catch (error) {
+      if (error instanceof Error && error.message === 'Usuario inactivo') {
+        throw error;
+      }
+
       const localUser = resolveLocalUser();
       if (localUser) {
         persistUser(localUser);
         return;
+      }
+
+      if (isBlockedLocalUser()) {
+        throw new Error('Usuario inactivo');
       }
 
       const demoUser = resolveDemoUser();

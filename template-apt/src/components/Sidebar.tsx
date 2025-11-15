@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Home, Users, Truck, FileText, Key, ClipboardList, Shield, ChevronDown, ChevronRight, X, Calendar, CheckSquare, Wrench, QrCode, AlertCircle, Settings, BarChart3, Activity, CheckCircle, Gauge } from 'lucide-react';
+import { Home, Users, Truck, FileText, Key, ClipboardList, Shield, ChevronDown, ChevronRight, X, Calendar, CheckSquare, Wrench, AlertCircle, Settings, BarChart3, Activity, CheckCircle, Gauge } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 
@@ -38,7 +38,6 @@ export default function Sidebar({ currentPage, onNavigate, isOpen = true, onClos
     { id: 'admin-roles', label: 'Roles y Permisos', icon: Shield },
     { id: 'admin-catalogos', label: 'Catálogos del Taller', icon: ClipboardList },
     { id: 'admin-agenda', label: 'Configuración de Agenda', icon: Calendar },
-    { id: 'admin-flota', label: 'Parámetros de Flota', icon: Truck },
     { id: 'admin-auditoria', label: 'Auditoría y Seguridad', icon: Key },
   ];
 

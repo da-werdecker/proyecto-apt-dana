@@ -373,7 +373,7 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
 
           if (Array.isArray(empleadosDb)) {
             empleadosData = empleadosDb.map((emp: any) => ({
-              ...emp,
+                ...emp,
               cargo_nombre: emp.cargo?.nombre_cargo || null,
               rol: emp.usuario?.rol || null,
             }));
@@ -397,13 +397,13 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
       
       // Enriquecer órdenes con información de solicitudes
       const ordenesEnriquecidas = ordenesDiagnosticoFiltered.map((orden: any) => {
-        const solicitud = solicitudes.find((s: any) =>
+        const solicitud = solicitudes.find((s: any) => 
           s.orden_trabajo_id === orden.id_orden_trabajo ||
           s.id_solicitud_diagnostico === orden.solicitud_diagnostico_id
         );
         const mecanico = empleadosData.find((e: any) => e.id_empleado === orden.empleado_id);
         const choferEmpleado = empleadosData.find((e: any) => e.id_empleado === solicitud?.empleado_id);
-
+        
         const choferNombre =
           solicitud?.nombre_operador ||
           solicitud?.nombre_chofer ||
@@ -686,7 +686,7 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
           (id) => typeof id === 'number' && id && id !== principalId,
         )
       : [];
-
+    
     setFormData({
       prioridad_ot: orden.prioridad_ot || 'normal',
       checklist_id: checklistExistente ? checklistExistente.id.toString() : (orden.checklist_id || ''),
@@ -829,19 +829,19 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
           : selectedOT.estado_ot || 'en_diagnostico_programado';
 
       const { error: updateError } = await supabase
-        .from('orden_trabajo')
-        .update({
-          prioridad_ot: formData.prioridad_ot,
-          checklist_id: formData.checklist_id ? Number(formData.checklist_id) : null,
-          confirmado_ingreso: formData.confirmado_ingreso,
-          estado_ot: estadoActualizado,
+              .from('orden_trabajo')
+              .update({
+                prioridad_ot: formData.prioridad_ot,
+                checklist_id: formData.checklist_id ? Number(formData.checklist_id) : null,
+                confirmado_ingreso: formData.confirmado_ingreso,
+                estado_ot: estadoActualizado,
           empleado_id: principalId,
           mecanico_apoyo_ids: [],
           fecha_programada_reparacion: formData.fecha_programada_reparacion,
           hora_programada_reparacion: formData.hora_programada_reparacion,
           estado_reparacion: 'programada',
-        })
-        .eq('id_orden_trabajo', selectedOT.id_orden_trabajo);
+              })
+              .eq('id_orden_trabajo', selectedOT.id_orden_trabajo);
 
       if (updateError) {
         throw updateError;
@@ -899,7 +899,7 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
               hora_programada_reparacion: formData.hora_programada_reparacion,
             },
           });
-        }
+          }
       } catch (notifyError) {
         console.warn('⚠️ No se pudo registrar la notificación para el chofer:', notifyError);
       }
@@ -908,8 +908,8 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
         type: 'success',
         message: 'Orden de trabajo actualizada exitosamente.',
       });
-      setModalOpen(false);
-      loadData();
+        setModalOpen(false);
+        loadData();
     } catch (error) {
       console.error('Error saving OT:', error);
       showToast({
@@ -935,52 +935,52 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
         message: 'No es posible guardar el checklist sin conexión a la base de datos.',
       });
       return;
-    }
+      }
 
-    try {
+        try {
       const payload = {
-        orden_trabajo_id: selectedOT.id_orden_trabajo,
+            orden_trabajo_id: selectedOT.id_orden_trabajo,
         empleado_id: formData.mecanico_principal_id ?? null,
         datos: checklistData,
-        clasificacion_prioridad: checklistData.clasificacion_prioridad || null,
+            clasificacion_prioridad: checklistData.clasificacion_prioridad || null,
         estado: checklistData.estado || 'completado',
-      };
+          };
 
-      const { data: upserted, error: checklistError } = await supabase
-        .from('checklist_diagnostico')
-        .upsert(payload, { onConflict: 'orden_trabajo_id' })
-        .select()
-        .single();
+          const { data: upserted, error: checklistError } = await supabase
+            .from('checklist_diagnostico')
+            .upsert(payload, { onConflict: 'orden_trabajo_id' })
+            .select()
+            .single();
 
-      if (checklistError) {
+          if (checklistError) {
         throw checklistError;
       }
 
       if (upserted) {
-        setChecklists((prev) => {
-          const filtered = prev.filter((c: any) => c.orden_trabajo_id !== selectedOT.id_orden_trabajo);
-          return [
-            ...filtered,
-            {
+      setChecklists((prev) => {
+        const filtered = prev.filter((c: any) => c.orden_trabajo_id !== selectedOT.id_orden_trabajo);
+        return [
+          ...filtered,
+          {
               ...upserted,
               id: upserted.id_checklist,
-            },
-          ];
-        });
-
+          },
+        ];
+      });
+      
         setFormData((prev) => ({
           ...prev,
           checklist_id: upserted.id_checklist ? String(upserted.id_checklist) : prev.checklist_id,
           prioridad_ot: checklistData.clasificacion_prioridad || prev.prioridad_ot,
         }));
 
-        await supabase
-          .from('orden_trabajo')
-          .update({
+            await supabase
+              .from('orden_trabajo')
+              .update({
             checklist_id: upserted.id_checklist,
-            prioridad_ot: checklistData.clasificacion_prioridad || selectedOT.prioridad_ot,
-          })
-          .eq('id_orden_trabajo', selectedOT.id_orden_trabajo);
+                prioridad_ot: checklistData.clasificacion_prioridad || selectedOT.prioridad_ot,
+              })
+              .eq('id_orden_trabajo', selectedOT.id_orden_trabajo);
       }
 
       setShowChecklist(false);
@@ -1247,7 +1247,7 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
 
     try {
       setClosingOtId(ordenId);
-      const cierreTimestamp = new Date().toISOString();
+    const cierreTimestamp = new Date().toISOString();
 
       const { error } = await supabase
         .from('orden_trabajo')
@@ -1257,16 +1257,16 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
         })
         .eq('id_orden_trabajo', ordenId);
 
-      if (error) {
+          if (error) {
         throw error;
-      }
+          }
 
       await loadData();
-      setCierreTab('finalizadas');
+          setCierreTab('finalizadas');
       showToast({
         type: 'success',
         message: 'Orden de trabajo cerrada correctamente.',
-      });
+        });
     } catch (err) {
       console.error('Error cerrando OT:', err);
       showToast({
@@ -2418,10 +2418,10 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
                                       const fecha = getAvanceTimestamp(progreso);
                                       return fecha
                                         ? fecha.toLocaleDateString('es-CL', {
-                                            day: '2-digit',
-                                            month: 'short',
-                                            hour: '2-digit',
-                                            minute: '2-digit',
+                                      day: '2-digit',
+                                      month: 'short',
+                                      hour: '2-digit',
+                                      minute: '2-digit',
                                           })
                                         : 'Fecha no registrada';
                                     })()}
@@ -2526,10 +2526,10 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
                                 const fecha = getAvanceTimestamp(resumen);
                                 return fecha
                                   ? `Último avance: ${fecha.toLocaleDateString('es-CL', {
-                                      day: '2-digit',
-                                      month: 'short',
-                                      hour: '2-digit',
-                                      minute: '2-digit',
+                                day: '2-digit',
+                                month: 'short',
+                                hour: '2-digit',
+                                minute: '2-digit',
                                     })}`
                                   : 'Último avance: sin registro de fecha';
                               })()}
@@ -2590,8 +2590,8 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
                                 </>
                               ) : (
                                 <>
-                                  <CheckCircle size={16} />
-                                  Cerrar OT
+                              <CheckCircle size={16} />
+                              Cerrar OT
                                 </>
                               )}
                             </button>
@@ -2967,38 +2967,38 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
             )}
 
             {!modalReadOnly && (
-              <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-                <input
-                  type="checkbox"
-                  id="confirmado_ingreso"
-                  checked={formData.confirmado_ingreso}
-                  onChange={(e) => setFormData({ ...formData, confirmado_ingreso: e.target.checked })}
-                  className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500"
-                />
+            <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+              <input
+                type="checkbox"
+                id="confirmado_ingreso"
+                checked={formData.confirmado_ingreso}
+                onChange={(e) => setFormData({ ...formData, confirmado_ingreso: e.target.checked })}
+                className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500"
+              />
                 <label htmlFor="confirmado_ingreso" className="flex items-center gap-2 text-sm font-medium">
-                  <CheckCircle className="text-green-600" size={18} />
-                  Confirmar que el vehículo ya ingresó al taller (guardia lo registró)
-                </label>
-              </div>
+                <CheckCircle className="text-green-600" size={18} />
+                Confirmar que el vehículo ya ingresó al taller (guardia lo registró)
+              </label>
+            </div>
             )}
 
             {!modalReadOnly && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Prioridad de la OT
-                </label>
-                <select
-                  value={formData.prioridad_ot}
-                  onChange={(e) => setFormData({ ...formData, prioridad_ot: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                >
-                  {PRIORIDADES_OT.map((prioridad) => (
-                    <option key={prioridad.value} value={prioridad.value}>
-                      {prioridad.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Prioridad de la OT
+              </label>
+              <select
+                value={formData.prioridad_ot}
+                onChange={(e) => setFormData({ ...formData, prioridad_ot: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              >
+                {PRIORIDADES_OT.map((prioridad) => (
+                  <option key={prioridad.value} value={prioridad.value}>
+                    {prioridad.label}
+                  </option>
+                ))}
+              </select>
+            </div>
             )}
 
             <div>
@@ -3094,12 +3094,12 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
                 {modalReadOnly ? 'Cerrar' : 'Cancelar'}
               </button>
               {!modalReadOnly && (
-                <button
-                  onClick={handleSaveOT}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                >
-                  Guardar Cambios
-                </button>
+              <button
+                onClick={handleSaveOT}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                Guardar Cambios
+              </button>
               )}
             </div>
           </div>

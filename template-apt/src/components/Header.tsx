@@ -97,11 +97,8 @@ export default function Header({ onMenuClick }: HeaderProps) {
 
   return (
     <>
-      {/* Top bar azul oscuro */}
-      <div className="bg-blue-900 h-2 w-full"></div>
-      
       {/* Header principal */}
-      <header className="bg-white shadow-sm border-b border-gray-200 rounded-t-xl -mt-2 relative z-10">
+      <header className="bg-white shadow-sm border-b border-gray-200 relative z-20">
         <div className="flex items-center justify-between px-4 md:px-6 py-4">
           {/* Botón hamburguesa solo en móvil */}
           <button 

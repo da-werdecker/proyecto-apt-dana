@@ -254,8 +254,12 @@ export default function AdminDashboard({ activeSection = 'usuarios' }: AdminDash
   const [modalNuevoUsuario, setModalNuevoUsuario] = useState(false);
   const [modalPasswordAuditoria, setModalPasswordAuditoria] = useState(false);
   const [modalResetPassword, setModalResetPassword] = useState(false);
+  const [modalBloquearUsuario, setModalBloquearUsuario] = useState(false);
   const [auditoriaAutenticada, setAuditoriaAutenticada] = useState(false);
+  const [auditoriaPassword, setAuditoriaPassword] = useState('');
+  const [auditoriaPasswordError, setAuditoriaPasswordError] = useState('');
   const [usuarioParaReset, setUsuarioParaReset] = useState<any | null>(null);
+  const [usuarioParaBloqueo, setUsuarioParaBloqueo] = useState<any | null>(null);
   const [nuevaPassword, setNuevaPassword] = useState('');
   const [selectedItem, setSelectedItem] = useState<any | null>(null);
   const [selectedChofer, setSelectedChofer] = useState<any | null>(null);
@@ -353,13 +357,22 @@ export default function AdminDashboard({ activeSection = 'usuarios' }: AdminDash
   };
 
   const formatRutValue = (input: string) => {
-    const digits = input.replace(/\D/g, '').slice(0, 9);
-    if (!digits) return '';
-    if (digits.length <= 1) return digits;
-    const cuerpo = digits.slice(0, -1);
-    const dv = digits.slice(-1);
-    const cuerpoConPuntos = cuerpo.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-    return `${cuerpoConPuntos}-${dv}`;
+    const clean = input.replace(/[^0-9kK]/g, '').toUpperCase();
+    if (!clean) return '';
+
+    const cuerpoDigits: string[] = [];
+    let dv = '';
+
+    for (const char of clean) {
+      if (/[0-9]/.test(char) && cuerpoDigits.length < 8) {
+        cuerpoDigits.push(char);
+      } else if (!dv && (/[0-9]/.test(char) || char === 'K')) {
+        dv = char === 'k' ? 'K' : char;
+      }
+    }
+
+    const cuerpoConPuntos = cuerpoDigits.join('').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    return dv ? `${cuerpoConPuntos}-${dv}` : cuerpoConPuntos;
   };
 
   const formatTelefonoValue = (input: string) => {
@@ -421,7 +434,7 @@ export default function AdminDashboard({ activeSection = 'usuarios' }: AdminDash
     const username = nuevoUsuarioForm.usuario.trim();
     const password = nuevoUsuarioForm.clave.trim();
     const nombre = nuevoUsuarioForm.nombre_completo.trim();
-    const rutDigits = nuevoUsuarioForm.rut.replace(/\D/g, '');
+    const rutClean = nuevoUsuarioForm.rut.replace(/[^0-9kK]/g, '').toUpperCase();
     const telefonoDigits = getTelefonoDigits(nuevoUsuarioForm.telefono);
     const correo = nuevoUsuarioForm.correo.trim();
 
@@ -451,10 +464,10 @@ export default function AdminDashboard({ activeSection = 'usuarios' }: AdminDash
       errors.nombre_completo = 'Solo se permiten letras.';
     }
 
-    if (!rutDigits) {
+    if (!rutClean) {
       errors.rut = 'El RUT es obligatorio.';
-    } else if (rutDigits.length !== 9) {
-      errors.rut = 'Debe tener 9 dígitos.';
+    } else if (!/^[0-9]{7,8}[0-9K]$/.test(rutClean)) {
+      errors.rut = 'Debe tener 8 dígitos más dígito verificador (0-9 o K).';
     }
 
     if (telefonoDigits && telefonoDigits.length !== 8) {
@@ -691,6 +704,13 @@ export default function AdminDashboard({ activeSection = 'usuarios' }: AdminDash
   };
 
   useEffect(() => {
+    if (activeSection !== 'auditoria') {
+      setModalPasswordAuditoria(false);
+      setAuditoriaAutenticada(false);
+      setAuditoriaPassword('');
+      setAuditoriaPasswordError('');
+    }
+
     if (activeSection === 'usuarios') {
       loadUsuarios();
       loadChoferes();
@@ -712,9 +732,6 @@ export default function AdminDashboard({ activeSection = 'usuarios' }: AdminDash
         setAgendaConfig(configGuardada);
       }
     } else if (activeSection === 'auditoria') {
-      // Resetear autenticación al cambiar a otra sección
-      setAuditoriaAutenticada(false);
-      // Solicitar contraseña para acceder a auditoría
       setModalPasswordAuditoria(true);
     }
   }, [activeSection]);
@@ -794,13 +811,21 @@ export default function AdminDashboard({ activeSection = 'usuarios' }: AdminDash
   };
 
   const handleValidarPasswordAuditoria = async (password: string) => {
-    if (password === 'admin123') {
+    const cleanPassword = password.trim();
+
+    if (!cleanPassword) {
+      setAuditoriaPasswordError('Por favor ingresa tu contraseña.');
+      return;
+    }
+
+    if (cleanPassword === 'admin123') {
       setAuditoriaAutenticada(true);
       setModalPasswordAuditoria(false);
+      setAuditoriaPassword('');
+      setAuditoriaPasswordError('');
       await loadUsuariosAuditoria();
     } else {
-      alert('❌ Contraseña incorrecta. No tienes acceso a esta sección.');
-      setModalPasswordAuditoria(false);
+      setAuditoriaPasswordError('Contraseña incorrecta. Inténtalo nuevamente.');
       setAuditoriaAutenticada(false);
     }
   };
@@ -2327,6 +2352,15 @@ export default function AdminDashboard({ activeSection = 'usuarios' }: AdminDash
     setModalResetPassword(true);
   };
 
+  const handleAbrirBloquearUsuario = () => {
+    if (usuariosAuditoria.length === 0) {
+      alert('No hay usuarios disponibles para bloquear');
+      return;
+    }
+    setUsuarioParaBloqueo(null);
+    setModalBloquearUsuario(true);
+  };
+
   const handleResetearPassword = async () => {
     if (!usuarioParaReset) {
       alert('Por favor selecciona un usuario');
@@ -2517,6 +2551,48 @@ export default function AdminDashboard({ activeSection = 'usuarios' }: AdminDash
       console.error('Error loading catalogos:', error);
     } finally {
       if (showLoader) setLoading(false);
+    }
+  };
+
+  const handleBloquearUsuario = async () => {
+    if (!usuarioParaBloqueo) {
+      alert('Por favor selecciona un usuario');
+      return;
+    }
+
+    const confirmacion = window.confirm(
+      `¿Seguro que deseas bloquear al usuario "${usuarioParaBloqueo.usuario}"?`
+    );
+    if (!confirmacion) return;
+
+    try {
+      if (hasSupabase) {
+        const { error } = await supabase
+          .from('usuario')
+          .update({ estado_usuario: false })
+          .eq('id_usuario', usuarioParaBloqueo.id_usuario);
+        if (error) throw error;
+
+        await supabase.from('auditoria_usuario').insert({
+          usuario_id: usuarioParaBloqueo.id_usuario,
+          accion: 'block_user',
+          detalle: 'Usuario bloqueado desde Auditoría y Seguridad',
+        });
+      } else {
+        const usuariosActuales = readLocal('apt_usuarios', []);
+        const usuariosActualizados = usuariosActuales.map((u: any) =>
+          u.id_usuario === usuarioParaBloqueo.id_usuario ? { ...u, estado_usuario: false } : u
+        );
+        writeLocal('apt_usuarios', usuariosActualizados);
+      }
+
+      alert(`✅ Usuario "${usuarioParaBloqueo.usuario}" bloqueado correctamente.`);
+      setModalBloquearUsuario(false);
+      setUsuarioParaBloqueo(null);
+      await Promise.all([loadUsuarios(), loadUsuariosAuditoria(), loadChoferes()]);
+    } catch (error: any) {
+      console.error('Error bloqueando usuario:', error);
+      alert(`❌ No se pudo bloquear al usuario: ${error.message || 'Revisa la consola'}`);
     }
   };
 
@@ -4123,7 +4199,10 @@ export default function AdminDashboard({ activeSection = 'usuarios' }: AdminDash
                   <Key size={18} />
                   Resetear Contraseña de Usuario
                 </button>
-                <button className="w-full px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-left flex items-center gap-2">
+                <button 
+                  onClick={handleAbrirBloquearUsuario}
+                  className="w-full px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-left flex items-center gap-2"
+                >
                   <Shield size={18} />
                   Bloquear Usuario
                 </button>
@@ -4726,6 +4805,8 @@ export default function AdminDashboard({ activeSection = 'usuarios' }: AdminDash
         onClose={() => {
           setModalPasswordAuditoria(false);
           setAuditoriaAutenticada(false);
+          setAuditoriaPassword('');
+          setAuditoriaPasswordError('');
         }} 
         title="Acceso Restringido - Auditoría y Seguridad"
       >
@@ -4737,23 +4818,36 @@ export default function AdminDashboard({ activeSection = 'usuarios' }: AdminDash
             </div>
           </div>
 
-          <form onSubmit={(e) => {
-            e.preventDefault();
-            const formData = new FormData(e.currentTarget);
-            const password = formData.get('password') as string;
-            handleValidarPasswordAuditoria(password);
-          }}>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleValidarPasswordAuditoria(auditoriaPassword);
+            }}
+          >
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Por favor ingresa tu contraseña de administrador:
               </label>
               <input
                 type="password"
-                name="password"
+                value={auditoriaPassword}
+                onChange={(e) => {
+                  setAuditoriaPassword(e.target.value);
+                  if (auditoriaPasswordError) {
+                    setAuditoriaPasswordError('');
+                  }
+                }}
                 autoFocus
                 placeholder="Contraseña de administrador"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                className={`w-full px-4 py-3 border rounded-lg focus:ring-2 ${
+                  auditoriaPasswordError
+                    ? 'border-red-400 focus:ring-red-500 focus:border-red-500'
+                    : 'border-gray-300 focus:ring-red-500 focus:border-red-500'
+                }`}
               />
+              {auditoriaPasswordError && (
+                <p className="text-xs text-red-600 mt-1">{auditoriaPasswordError}</p>
+              )}
             </div>
             
             <div className="flex justify-end gap-3 pt-4 mt-4 border-t">
@@ -4762,6 +4856,8 @@ export default function AdminDashboard({ activeSection = 'usuarios' }: AdminDash
                 onClick={() => {
                   setModalPasswordAuditoria(false);
                   setAuditoriaAutenticada(false);
+                  setAuditoriaPassword('');
+                  setAuditoriaPasswordError('');
                 }}
                 className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
               >
@@ -4856,6 +4952,72 @@ export default function AdminDashboard({ activeSection = 'usuarios' }: AdminDash
               className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
             >
               Resetear Contraseña
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal: Bloquear Usuario */}
+      <Modal
+        isOpen={modalBloquearUsuario}
+        onClose={() => {
+          setModalBloquearUsuario(false);
+          setUsuarioParaBloqueo(null);
+        }}
+        title="Bloquear Usuario"
+      >
+        <div className="space-y-4">
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+            <div className="flex items-center gap-2 text-red-800">
+              <Shield size={20} />
+              <p className="font-semibold">Al bloquear un usuario no podrá iniciar sesión hasta que lo reactivas.</p>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Seleccionar Usuario *
+            </label>
+            <select
+              value={usuarioParaBloqueo?.id_usuario || ''}
+              onChange={(e) => {
+                const usuario = usuariosAuditoria.find(u => u.id_usuario === parseInt(e.target.value));
+                setUsuarioParaBloqueo(usuario || null);
+              }}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500"
+            >
+              <option value="">-- Selecciona un usuario --</option>
+              {usuariosAuditoria.map((usuario) => (
+                <option key={usuario.id_usuario} value={usuario.id_usuario}>
+                  {usuario.usuario} ({usuario.estado_usuario ? 'Activo' : 'Inactivo'})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {usuarioParaBloqueo && (
+            <div className="bg-gray-50 p-3 rounded-lg text-sm text-gray-700">
+              <p><strong>Usuario:</strong> {usuarioParaBloqueo.usuario}</p>
+              <p><strong>Estado actual:</strong> {usuarioParaBloqueo.estado_usuario ? 'Activo' : 'Inactivo'}</p>
+              <p><strong>Rol:</strong> {usuarioParaBloqueo.rol}</p>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-3 pt-4 border-t">
+            <button
+              onClick={() => {
+                setModalBloquearUsuario(false);
+                setUsuarioParaBloqueo(null);
+              }}
+              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={handleBloquearUsuario}
+              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+            >
+              Bloquear Usuario
             </button>
           </div>
         </div>
