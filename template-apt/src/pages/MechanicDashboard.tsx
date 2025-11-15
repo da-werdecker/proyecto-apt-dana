@@ -1,5 +1,5 @@
 import { useState, useEffect, ChangeEvent, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   CheckCircle,
   Clock,
@@ -19,16 +19,23 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import Modal from '../components/Modal';
 import { supabase } from '../lib/supabase';
+import { useToast } from '../components/ToastProvider';
 
 interface MechanicDashboardProps {
-  activeSection?: 'overview' | 'assigned' | 'progress' | 'history';
+  activeSection?: 'overview' | 'assigned' | 'progress' | 'ot-progress';
+  initialCombinedTab?: 'ordenes' | 'registro';
 }
 const hasEnv =
   Boolean(import.meta.env.VITE_SUPABASE_URL) && Boolean(import.meta.env.VITE_SUPABASE_ANON_KEY);
 
-export default function MechanicDashboard({ activeSection = 'assigned' }: MechanicDashboardProps) {
+export default function MechanicDashboard({
+  activeSection = 'assigned',
+  initialCombinedTab,
+}: MechanicDashboardProps) {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const { showToast } = useToast();
 
   const [loading, setLoading] = useState(true);
   const [myOrders, setMyOrders] = useState<any[]>([]);
@@ -50,9 +57,232 @@ export default function MechanicDashboard({ activeSection = 'assigned' }: Mechan
   const [recentProgressList, setRecentProgressList] = useState<any[]>([]);
   const [overviewFinalizedOrders, setOverviewFinalizedOrders] = useState<any[]>([]);
   const [completedAdvances, setCompletedAdvances] = useState<any[]>([]);
+  const [otCombinedTab, setOtCombinedTab] = useState<'ordenes' | 'registro' | 'finalizadas'>(
+    initialCombinedTab || (activeSection === 'progress' ? 'registro' : 'ordenes')
+  );
+  const combinedViewActive =
+    activeSection === 'assigned' || activeSection === 'progress' || activeSection === 'ot-progress';
 
   const normalizeOrderState = (estado: string | null | undefined) =>
     (estado || '').toLowerCase().replace(/\s+/g, '_');
+
+  const isFinalState = (estado: string | null | undefined) => {
+    const normalized = normalizeOrderState(estado);
+    return ['finalizada', 'finalizado', 'cerrada', 'cerrado'].includes(normalized);
+  };
+
+  const getOtEstadoClasses = (estado: string | null | undefined) => {
+    const normalized = (estado || '').toLowerCase();
+    if (normalized === 'finalizada') {
+      return 'bg-rose-100 text-rose-700';
+    }
+    if (['en_proceso', 'en_progreso', 'en_reparacion', 'en_reparación', 'en_curso'].includes(normalized)) {
+      return 'bg-emerald-100 text-emerald-700';
+    }
+    return 'bg-blue-50 text-blue-600';
+  };
+
+  const formatEstadoLabel = (estado: string | null | undefined) => {
+    if (!estado) return 'Sin estado';
+    const cleaned = estado.replace(/_/g, ' ').toLowerCase();
+    return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+  };
+
+  const renderOrdersGrid = (ordersList: any[], emptyMessage: string) => {
+    if (!ordersList || ordersList.length === 0) {
+      return (
+        <div className="rounded-3xl border border-dashed border-slate-200 bg-white py-12 text-center shadow-sm">
+          <FileText className="mx-auto text-slate-300" size={48} />
+          <p className="mt-4 text-sm text-slate-500">{emptyMessage}</p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-5">
+        {ordersList.map((order) => {
+          const reparacionEstado = (order.estado_reparacion || 'pendiente').toLowerCase();
+          const reparacionProgramada = Boolean(order.fecha_programada_reparacion);
+          const reparacionBadgeClasses =
+            reparacionEstado === 'programada'
+              ? 'bg-emerald-100 text-emerald-700'
+              : reparacionEstado === 'en_reparacion'
+              ? 'bg-blue-100 text-blue-700'
+              : reparacionEstado === 'finalizada'
+              ? 'bg-slate-200 text-slate-700'
+              : 'bg-amber-100 text-amber-700';
+          const estadoOtClasses = getOtEstadoClasses(order.estado_ot);
+          const estadoOtLabel = formatEstadoLabel(order.estado_ot);
+          const showRegistrarAccion = !isFinalState(order.estado_ot);
+
+          return (
+            <div
+              key={order.id_orden_trabajo}
+              className="rounded-3xl border border-slate-200 bg-gradient-to-br from-slate-50 via-white to-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg"
+            >
+              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                <div className="flex-1 space-y-4">
+                  <div className="flex flex-wrap items-center gap-2 text-sm font-semibold">
+                    <span className="inline-flex items-center gap-2 rounded-full bg-blue-600 px-3 py-1 text-sm font-semibold text-white shadow">
+                      <Truck size={16} />
+                      {order.patente_vehiculo}
+                    </span>
+                    <span
+                      className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${
+                        order.prioridad === 'critica'
+                          ? 'bg-rose-100 text-rose-700'
+                          : order.prioridad === 'alta'
+                          ? 'bg-amber-100 text-amber-700'
+                          : 'bg-blue-100 text-blue-700'
+                      }`}
+                    >
+                      {order.prioridad === 'critica'
+                        ? 'Crítica'
+                        : order.prioridad === 'alta'
+                        ? 'Alta'
+                        : 'Normal'}
+                    </span>
+                    <span
+                      className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${estadoOtClasses}`}
+                    >
+                      {estadoOtLabel}
+                    </span>
+                    <span
+                      className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${reparacionBadgeClasses}`}
+                    >
+                      {`Reparación: ${reparacionEstado.replace(/_/g, ' ')}`}
+                    </span>
+                  </div>
+
+                  <div className="grid gap-3 text-sm text-slate-600 sm:grid-cols-2 lg:grid-cols-3">
+                    <span className="inline-flex items-center gap-2">
+                      <AlertCircle size={16} className="text-slate-400" />
+                      <strong>Falla:</strong> {order.falla_reportada}
+                    </span>
+                    <span className="inline-flex items-center gap-2">
+                      <Truck size={16} className="text-slate-400" />
+                      <strong>Marca / Modelo:</strong> {order.marca_vehiculo} {order.modelo_vehiculo}
+                    </span>
+                    <span className="inline-flex items-center gap-2">
+                      <User size={16} className="text-slate-400" />
+                      <strong>Tipo:</strong> {order.tipo_vehiculo}
+                    </span>
+                    <span className="inline-flex items-center gap-2">
+                      <Calendar size={16} className="text-slate-400" />
+                      <strong>Fecha inicio:</strong> {formatDate(order.fecha_programada || order.fecha_inicio_ot)}
+                    </span>
+                    <span className="inline-flex items-center gap-2">
+                      <Clock size={16} className="text-slate-400" />
+                      <strong>Hora estimada:</strong> {order.hora_estimado || order.hora_confirmada || 'N/A'}
+                    </span>
+                    <span className="inline-flex items-center gap-2">
+                      <ClipboardList size={16} className="text-slate-400" />
+                      <strong>Sucursal:</strong> {order.sucursal_nombre}
+                    </span>
+                    {order.kilometraje_registrado && (
+                      <span className="inline-flex items-center gap-2">
+                        <Gauge size={16} className="text-slate-400" />
+                        <strong>Kilometraje:</strong> {order.kilometraje_registrado.toLocaleString('es-CL')} km
+                      </span>
+                    )}
+                  </div>
+
+                  {reparacionProgramada && (
+                    <div className="inline-flex items-center gap-2 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-xs font-semibold text-blue-700">
+                      <Calendar size={16} />
+                      <span>
+                        Reparación programada para {formatDate(order.fecha_programada_reparacion)}{' '}
+                        {order.hora_programada_reparacion ? `· ${order.hora_programada_reparacion}` : ''}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex flex-col items-stretch gap-2 md:items-end">
+                  <button
+                    onClick={() => handleGoToProgress(order)}
+                    className="inline-flex items-center justify-center gap-2 rounded-full bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow hover:bg-blue-700"
+                  >
+                    Ver detalle y registrar
+                  </button>
+                  {showRegistrarAccion && (
+                    <button
+                      onClick={() => handleGoToProgress(order)}
+                      className="inline-flex items-center justify-center gap-2 rounded-full bg-emerald-500 px-4 py-2 text-xs font-semibold text-white shadow hover:bg-emerald-600"
+                    >
+                      Registrar avance
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const combinedTabTitle =
+    otCombinedTab === 'ordenes'
+      ? 'Paso 1 · Selecciona una OT'
+      : otCombinedTab === 'registro'
+      ? 'Paso 2 · Registra tu avance'
+      : 'OT finalizadas';
+
+  const combinedTabDescription =
+    otCombinedTab === 'ordenes'
+      ? 'Revisa detalles, prioridad y agenda antes de comenzar a trabajar.'
+      : otCombinedTab === 'registro'
+      ? selectedOT
+        ? `Documenta el trabajo realizado en la OT ${selectedOT.patente_vehiculo || `#${selectedOT.id_orden_trabajo}`}.`
+        : 'Selecciona una OT para habilitar el formulario de registro.'
+      : 'Consulta rápidamente todas las OT que ya fueron cerradas o finalizadas.';
+
+  const combinedSummary = useMemo(() => {
+    if (!Array.isArray(myOrders) || myOrders.length === 0) {
+      return { total: 0, activas: 0, pendientes: 0, finalizadas: 0 };
+    }
+
+    let activas = 0;
+    let finalizadas = 0;
+    let pendientes = 0;
+
+    myOrders.forEach((orden: any) => {
+      const estadoNorm = normalizeOrderState(orden.estado_ot);
+      if (estadoNorm === 'finalizada') {
+        finalizadas += 1;
+        return;
+      }
+      if (
+        ['en_curso', 'en_reparacion', 'en_pruebas', 'esperando_repuestos', 'en_diagnostico_programado'].includes(
+          estadoNorm
+        )
+      ) {
+        activas += 1;
+        return;
+      }
+      pendientes += 1;
+    });
+
+    return {
+      total: myOrders.length,
+      activas,
+      pendientes,
+      finalizadas,
+    };
+  }, [myOrders]);
+
+  const finalOrders = useMemo(() => {
+    if (!Array.isArray(myOrders) || myOrders.length === 0) return [];
+    return myOrders.filter(
+      (orden: any) => isFinalState(orden.estado_ot) || isFinalState(orden.estado_reparacion)
+    );
+  }, [myOrders]);
+
+  const activeOrders = useMemo(() => {
+    if (!Array.isArray(myOrders) || myOrders.length === 0) return [];
+    return myOrders.filter((orden: any) => !isFinalState(orden.estado_ot));
+  }, [myOrders]);
 
   const [progressData, setProgressData] = useState({
     descripcion_trabajo: '',
@@ -135,18 +365,24 @@ export default function MechanicDashboard({ activeSection = 'assigned' }: Mechan
   }, [workHistory]);
 
   useEffect(() => {
+    if (activeSection === 'progress') {
+      setOtCombinedTab('registro');
+    } else if (activeSection === 'assigned') {
+      setOtCombinedTab('ordenes');
+    }
+  }, [activeSection]);
+
+  useEffect(() => {
     const fetchData = async () => {
       if (activeSection === 'overview') {
         await loadMyOrders(true);
-      } else if (activeSection === 'assigned' || activeSection === 'progress') {
+      } else if (combinedViewActive) {
         await loadMyOrders();
-      } else if (activeSection === 'history') {
-        await loadWorkHistory();
       }
     };
 
     fetchData();
-  }, [activeSection, user]);
+  }, [activeSection, user, combinedViewActive]);
 
   const loadCompletedAdvances = async (empleadoId: number | null | undefined) => {
     if (!hasEnv || !empleadoId) {
@@ -595,10 +831,34 @@ export default function MechanicDashboard({ activeSection = 'assigned' }: Mechan
   };
 
   useEffect(() => {
-    if (activeSection === 'progress') {
-      setSelectedOT(null);
-      setOrderUpdateData({ estado_ot: 'en_reparacion', detalle_reparacion: '' });
-      fetchProgressLogs(null);
+  if (!combinedViewActive) return;
+  const state =
+    (location.state as { orderId?: number; tab?: 'ordenes' | 'registro' } | null) || null;
+  if (!state) return;
+
+  if (state.orderId) {
+    if (myOrders.length === 0) return;
+    const target = myOrders.find((orden) => orden.id_orden_trabajo === state.orderId);
+    if (!target) return;
+    setSelectedOT(target);
+    setOrderUpdateData({
+      estado_ot: target.estado_ot || 'en_reparacion',
+      detalle_reparacion: target.detalle_reparacion || '',
+    });
+    fetchProgressLogs(target.id_orden_trabajo);
+    setOtCombinedTab('registro');
+    navigate(location.pathname, { replace: true });
+    return;
+  }
+
+  if (state.tab) {
+    setOtCombinedTab(state.tab);
+    navigate(location.pathname, { replace: true });
+  }
+}, [combinedViewActive, location, myOrders]);
+
+useEffect(() => {
+  if (combinedViewActive) {
       return;
     }
 
@@ -606,7 +866,26 @@ export default function MechanicDashboard({ activeSection = 'assigned' }: Mechan
     if (!current) {
       fetchProgressLogs(null);
     }
-  }, [myOrders, activeSection]);
+}, [myOrders, combinedViewActive]);
+
+useEffect(() => {
+  if (!combinedViewActive || !selectedOT) return;
+  const updated = myOrders.find(
+    (orden) => orden.id_orden_trabajo === selectedOT.id_orden_trabajo
+  );
+  if (updated) {
+    if (updated !== selectedOT) {
+      setSelectedOT(updated);
+      setOrderUpdateData((prev) => ({
+        ...prev,
+        estado_ot: updated.estado_ot || prev.estado_ot,
+        detalle_reparacion: updated.detalle_reparacion || prev.detalle_reparacion,
+      }));
+    }
+  } else {
+    setSelectedOT(null);
+  }
+}, [combinedViewActive, myOrders, selectedOT]);
 
   const loadWorkHistory = async () => {
     try {
@@ -767,13 +1046,22 @@ export default function MechanicDashboard({ activeSection = 'assigned' }: Mechan
   };
 
   const handleGoToProgress = (orden: any) => {
+    const selectOrder = () => {
     setSelectedOT(orden);
     setOrderUpdateData({
       estado_ot: orden.estado_ot || 'en_reparacion',
       detalle_reparacion: orden.detalle_reparacion || '',
     });
     fetchProgressLogs(orden.id_orden_trabajo);
-    navigate('/mechanic-progress');
+      setOtCombinedTab('registro');
+    };
+
+    if (combinedViewActive) {
+      selectOrder();
+      return;
+    }
+
+    navigate('/mechanic-ots', { state: { orderId: orden.id_orden_trabajo } });
   };
 
   const handleImageUpload = (e: ChangeEvent<HTMLInputElement>) => {
@@ -782,7 +1070,10 @@ export default function MechanicDashboard({ activeSection = 'assigned' }: Mechan
 
     Array.from(files).forEach((file) => {
       if (file.size > 5 * 1024 * 1024) {
-        alert('La imagen es muy grande. Máximo 5MB por imagen.');
+        showToast({
+          type: 'warning',
+          message: `La imagen ${file.name} es muy grande. Máximo 5MB por imagen.`,
+        });
         return;
       }
 
@@ -797,11 +1088,17 @@ export default function MechanicDashboard({ activeSection = 'assigned' }: Mechan
 
   const handleSaveProgress = async () => {
     if (!selectedOT) {
-      alert('Selecciona una OT antes de registrar avances.');
+      showToast({
+        type: 'warning',
+        message: 'Selecciona una OT antes de registrar avances.',
+      });
       return;
     }
     if (!progressData.descripcion_trabajo.trim()) {
-      alert('Describe el trabajo realizado.');
+      showToast({
+        type: 'warning',
+        message: 'Describe el trabajo realizado antes de registrar el avance.',
+      });
       return;
     }
 
@@ -816,7 +1113,10 @@ export default function MechanicDashboard({ activeSection = 'assigned' }: Mechan
     };
 
     if (!hasEnv) {
-      alert('No se pudo registrar el avance porque la conexión a la base de datos no está disponible.');
+      showToast({
+        type: 'error',
+        message: 'No se pudo registrar el avance porque la conexión a la base de datos no está disponible.',
+      });
       return;
     }
 
@@ -842,7 +1142,10 @@ export default function MechanicDashboard({ activeSection = 'assigned' }: Mechan
         await loadWorkHistory();
     }
 
-    alert('✅ Progreso registrado exitosamente');
+    showToast({
+      type: 'success',
+      message: 'Progreso registrado exitosamente.',
+    });
 
     setProgressData({
       descripcion_trabajo: '',
@@ -857,20 +1160,29 @@ export default function MechanicDashboard({ activeSection = 'assigned' }: Mechan
       await loadCompletedAdvances(empleadoInfo?.id_empleado || null);
     } catch (error: any) {
       console.error('Error guardando avance:', error);
-      alert('❌ No se pudo guardar el avance en la base de datos.');
+      showToast({
+        type: 'error',
+        message: 'No se pudo guardar el avance en la base de datos.',
+      });
     }
   };
 
   const handleUpdateRepairDetail = async () => {
     if (!selectedOT) {
-      alert('Selecciona una OT para editar su detalle.');
+      showToast({
+        type: 'warning',
+        message: 'Selecciona una OT para editar su detalle.',
+      });
       return;
     }
 
     const nuevoDetalle = editDetailValue.trim();
 
     if (!hasEnv) {
-      alert('No se pudo actualizar el detalle porque la base de datos no está disponible.');
+      showToast({
+        type: 'error',
+        message: 'No se pudo actualizar el detalle porque la base de datos no está disponible.',
+      });
       return;
     }
 
@@ -902,10 +1214,16 @@ export default function MechanicDashboard({ activeSection = 'assigned' }: Mechan
       await fetchProgressLogs(selectedOT.id_orden_trabajo);
       await loadWorkHistory();
 
-      alert('✅ Detalle de la OT actualizado');
+      showToast({
+        type: 'success',
+        message: 'Detalle de la OT actualizado.',
+      });
     } catch (error: any) {
       console.error('Error actualizando detalle:', error);
-      alert('❌ No se pudo actualizar la OT en la base de datos.');
+      showToast({
+        type: 'error',
+        message: 'No se pudo actualizar la OT en la base de datos.',
+      });
     }
   };
 
@@ -1182,11 +1500,7 @@ export default function MechanicDashboard({ activeSection = 'assigned' }: Mechan
               </div>
             )}
           </div>
-        ) : (
-          <div className="rounded-3xl border border-dashed border-slate-200 bg-white py-10 text-center text-sm text-slate-500">
-            Selecciona una OT de la lista para registrar un avance.
-          </div>
-        )}
+        ) : null}
       </div>
     );
   };
@@ -1228,7 +1542,10 @@ export default function MechanicDashboard({ activeSection = 'assigned' }: Mechan
                   if (orderRef) {
                     handleGoToProgress(orderRef);
                   } else {
-                    alert('No se encontró la OT asociada en tu lista.');
+                    showToast({
+                      type: 'error',
+                      message: 'No se encontró la OT asociada en tu lista.',
+                    });
                   }
                 }}
                 className="inline-flex items-center gap-2 rounded-full border border-blue-200 px-3 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-50"
@@ -1369,7 +1686,7 @@ export default function MechanicDashboard({ activeSection = 'assigned' }: Mechan
                   <p className="text-xs text-slate-500">Mantén tu historial al día registrando cada intervención.</p>
                 </div>
                 <button
-                  onClick={() => navigate('/mechanic-progress')}
+                  onClick={() => navigate('/mechanic-ots', { state: { tab: 'registro' } })}
                   className="inline-flex items-center gap-2 rounded-full border border-blue-200 px-3 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-50"
                 >
                   Registrar nuevo
@@ -1406,7 +1723,10 @@ export default function MechanicDashboard({ activeSection = 'assigned' }: Mechan
                             if (orderRef) {
                               handleGoToProgress(orderRef);
                             } else {
-                              alert('No se encontró la OT asociada en tu lista.');
+                              showToast({
+                                type: 'error',
+                                message: 'No se encontró la OT asociada en tu lista.',
+                              });
                             }
                           }}
                           className="inline-flex items-center gap-2 rounded-full border border-blue-200 px-3 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-50"
@@ -1424,56 +1744,142 @@ export default function MechanicDashboard({ activeSection = 'assigned' }: Mechan
           <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-lg font-semibold text-slate-900">Últimas OT finalizadas</h2>
-                <p className="text-xs text-slate-500">Al cerrar una OT aparecerá aquí tu resumen técnico.</p>
+                <h2 className="text-lg font-semibold text-slate-900">Últimas OT con avance</h2>
+                <p className="text-xs text-slate-500">Cada vez que registres trabajo, lo verás reflejado aquí.</p>
               </div>
-              <button
-                onClick={() => navigate('/mechanic-history')}
-                className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:border-blue-200 hover:text-blue-600"
-              >
-                Ver historial
-              </button>
             </div>
-            {overviewFinalizedOrders.length === 0 ? (
+            {completedAdvances.length === 0 ? (
               <div className="mt-6 rounded-xl border border-dashed border-slate-200 bg-slate-50 py-8 text-center text-sm text-slate-500">
-                Aún no tienes OT finalizadas registradas.
+                Aún no registras avances recientemente.
               </div>
             ) : (
               <div className="mt-6 space-y-4">
-                {overviewFinalizedOrders.map((orden) => (
-                    <div key={orden.id_orden_trabajo} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 shadow-sm">
-                      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                        <div>
-                          <p className="text-sm font-semibold text-slate-900">{orden.patente_vehiculo}</p>
-                          <p className="text-xs text-slate-500">
-                            {orden.marca_vehiculo} {orden.modelo_vehiculo}
+                {completedAdvances.slice(0, 4).map((avance) => (
+                  <div key={avance.id_avance_ot} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 shadow-sm">
+                    <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">{avance.patente_vehiculo}</p>
+                        <p className="text-xs text-slate-500">
+                          {avance.marca_vehiculo} {avance.modelo_vehiculo}
+                        </p>
+                        <div className="mt-2 text-xs text-slate-500 space-y-1">
+                          <p>
+                            <strong>Trabajo:</strong> {avance.descripcion_trabajo}
                           </p>
-                          <div className="mt-2 text-xs text-slate-500 space-y-1">
+                          {avance.observaciones && (
                             <p>
-                              <strong>Inicio:</strong> {formatDate(orden.fecha_inicio_ot)}
+                              <strong>Obs:</strong> {avance.observaciones}
                             </p>
-                            <p>
-                              <strong>Cierre:</strong> {formatDate(orden.fecha_cierre_ot)}
-                            </p>
-                            <p>
-                              <strong>Detalle:</strong> {orden.detalle_reparacion || orden.descripcion_ot || 'Sin detalle'}
-                            </p>
-                          </div>
+                          )}
+                          <p>
+                            <strong>Registrado:</strong> {formatDateTime(avance.created_at)}
+                          </p>
                         </div>
-                        <span className="inline-flex items-center gap-2 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
-                          <CheckCircle size={14} />
-                          Finalizada
-                        </span>
                       </div>
+                      <span className="inline-flex items-center gap-2 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+                        <CheckCircle size={14} />
+                        Avance registrado
+                      </span>
                     </div>
-                  ))}
+                  </div>
+                ))}
               </div>
             )}
           </div>
         </div>
       )}
 
-      {activeSection === 'assigned' && (
+      {combinedViewActive && (
+        <div className="space-y-6">
+          <div className="rounded-3xl border border-transparent bg-gradient-to-br from-blue-600 via-blue-500 to-indigo-500 p-8 text-white shadow-xl shadow-blue-200/40">
+            <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+              <div className="space-y-3">
+                <span className="inline-flex items-center gap-2 rounded-full bg-white/20 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white">
+                  <ClipboardList size={14} />
+                  Flujo operativo del día
+                </span>
+                <div>
+                  <h1 className="text-3xl font-bold">OT´s y Registro de Avances</h1>
+                  <p className="text-sm text-blue-100">
+                    Revisa tus órdenes asignadas, conoce su prioridad y documenta el progreso sin cambiar de pantalla.
+                  </p>
+                </div>
+              </div>
+              <div className="grid w-full gap-3 sm:grid-cols-3 lg:w-auto">
+                {[
+                  { label: 'OT asignadas', value: combinedSummary.total },
+                  { label: 'Activas', value: combinedSummary.activas },
+                  { label: 'Finalizadas', value: combinedSummary.finalizadas },
+                ].map((stat) => (
+                  <div
+                    key={stat.label}
+                    className="rounded-2xl border border-white/30 bg-white/15 px-4 py-3 text-center backdrop-blur"
+                  >
+                    <p className="text-xs uppercase tracking-wide text-white/70">{stat.label}</p>
+                    <p className="text-2xl font-bold">{stat.value}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm shadow-slate-200/50 md:p-6">
+            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{combinedTabTitle}</p>
+                <p className="text-sm text-slate-600">{combinedTabDescription}</p>
+              </div>
+              <div className="inline-flex flex-nowrap items-center gap-1 rounded-full border border-slate-200 bg-slate-50 p-1 text-sm font-semibold text-slate-500 shadow-inner">
+                <button
+                  onClick={() => setOtCombinedTab('ordenes')}
+                  className={`flex items-center gap-2 rounded-full px-4 py-2 transition ${
+                    otCombinedTab === 'ordenes'
+                      ? 'bg-white text-blue-600 shadow shadow-blue-100'
+                      : 'hover:text-blue-600'
+                  }`}
+                >
+                  <ClipboardList size={16} />
+                  Órdenes asignadas
+                </button>
+                <button
+                  onClick={() => setOtCombinedTab('registro')}
+                  className={`flex items-center gap-2 rounded-full px-4 py-2 transition ${
+                    otCombinedTab === 'registro'
+                      ? 'bg-white text-emerald-600 shadow shadow-emerald-100'
+                      : 'hover:text-emerald-600'
+                  }`}
+                >
+                  <Activity size={16} />
+                  Registro de avances
+                </button>
+                <button
+                  onClick={() => setOtCombinedTab('finalizadas')}
+                  className={`flex items-center gap-2 rounded-full px-4 py-2 transition ${
+                    otCombinedTab === 'finalizadas'
+                      ? 'bg-white text-rose-600 shadow shadow-rose-100'
+                      : 'hover:text-rose-600'
+                  }`}
+                >
+                  <CheckCircle size={16} />
+                  OT finalizadas
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {otCombinedTab === 'ordenes' && renderOrdersGrid(activeOrders, 'No tienes órdenes de trabajo asignadas.')}
+          {otCombinedTab === 'finalizadas' &&
+            renderOrdersGrid(finalOrders, 'Aún no registras OT finalizadas en tu lista.')}
+          {otCombinedTab === 'registro' && (
+            <div className="space-y-6">
+              {progressTab === 'pendientes'
+                ? renderPendingProgressSection()
+                : renderFinalizedProgressSection()}
+            </div>
+          )}
+        </div>
+      )}
+      {activeSection === 'assigned' && !combinedViewActive && (
         <div className="space-y-6">
           <div className="rounded-3xl border border-slate-100 bg-white p-8 shadow-lg shadow-slate-200/60">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -1482,19 +1888,19 @@ export default function MechanicDashboard({ activeSection = 'assigned' }: Mechan
                 <p className="text-sm text-slate-500">Revisa las órdenes que tienes a tu cargo y registra avances.</p>
               </div>
               <div className="rounded-full bg-blue-50 px-4 py-2 text-xs font-semibold text-blue-700">
-                {myOrders.length} OT asignada(s)
+                {activeOrders.length} OT asignada(s)
               </div>
             </div>
           </div>
 
-          {myOrders.length === 0 ? (
+          {activeOrders.length === 0 ? (
             <div className="rounded-3xl border border-dashed border-slate-200 bg-white py-12 text-center shadow-sm">
               <FileText className="mx-auto text-slate-300" size={48} />
               <p className="mt-4 text-sm text-slate-500">No tienes órdenes de trabajo asignadas.</p>
             </div>
           ) : (
             <div className="space-y-5">
-              {myOrders.map((order) => {
+              {activeOrders.map((order) => {
                 const reparacionEstado = (order.estado_reparacion || 'pendiente').toLowerCase();
                 const reparacionProgramada = Boolean(order.fecha_programada_reparacion);
                 const reparacionBadgeClasses =
@@ -1505,6 +1911,8 @@ export default function MechanicDashboard({ activeSection = 'assigned' }: Mechan
                     : reparacionEstado === 'finalizada'
                     ? 'bg-slate-200 text-slate-700'
                     : 'bg-amber-100 text-amber-700';
+                const estadoOtClasses = getOtEstadoClasses(order.estado_ot);
+                const estadoOtLabel = formatEstadoLabel(order.estado_ot);
                 return (
                 <div
                   key={order.id_orden_trabajo}
@@ -1533,15 +1941,9 @@ export default function MechanicDashboard({ activeSection = 'assigned' }: Mechan
                             : 'Normal'}
                         </span>
                         <span
-                          className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${
-                            order.estado_ot === 'finalizada'
-                              ? 'bg-emerald-100 text-emerald-700'
-                              : order.estado_ot === 'en_diagnostico_programado'
-                              ? 'bg-slate-100 text-slate-700'
-                              : 'bg-blue-50 text-blue-600'
-                          }`}
+                          className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${estadoOtClasses}`}
                         >
-                          {order.estado_ot === 'finalizada' ? 'Finalizada' : order.estado_ot}
+                          {estadoOtLabel}
                         </span>
                         <span
                           className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${reparacionBadgeClasses}`}
@@ -1624,7 +2026,7 @@ export default function MechanicDashboard({ activeSection = 'assigned' }: Mechan
 
       {activeSection === 'detail' && null}
 
-      {activeSection === 'progress' && (
+      {activeSection === 'progress' && !combinedViewActive && (
         <div className="space-y-8">
           <div className="rounded-3xl border border-slate-100 bg-white p-8 shadow-lg shadow-slate-200/60">
             <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
@@ -1674,176 +2076,6 @@ export default function MechanicDashboard({ activeSection = 'assigned' }: Mechan
           {progressTab === 'pendientes'
             ? renderPendingProgressSection()
             : renderFinalizedProgressSection()}
-        </div>
-      )}
-
-      {activeSection === 'history' && (
-        <div className="space-y-8">
-          <div className="rounded-3xl border border-slate-100 bg-white p-8 shadow-lg shadow-slate-200/60">
-            <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
-              <div className="space-y-3">
-                <span className="inline-flex items-center gap-2 rounded-full bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
-                  <Calendar size={14} />
-                  Reportes operativos
-                </span>
-                <div>
-                  <h1 className="text-3xl font-bold text-slate-900">Historial de Trabajos</h1>
-                  <p className="text-sm text-slate-500">
-                    Indicadores clave de tus intervenciones: productividad, tiempos y fallas más frecuentes.
-                  </p>
-                </div>
-              </div>
-              <div className="rounded-full bg-blue-50 px-4 py-2 text-xs font-semibold text-blue-600">
-                {historySummary.total} OT registradas
-              </div>
-            </div>
-          </div>
-
-          {workHistory.length === 0 ? (
-            <div className="rounded-3xl border border-dashed border-slate-200 bg-white py-12 text-center shadow-sm">
-              <Calendar className="mx-auto text-slate-300" size={48} />
-              <p className="mt-4 text-sm text-slate-500">Aún no hay OT con cierre técnico registrado por el jefe de taller.</p>
-            </div>
-          ) : (
-            <div className="space-y-6">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {[{
-                  label: 'OT trabajadas',
-                  value: historySummary.total.toString(),
-                  color: 'text-slate-700',
-                  bg: 'bg-slate-100',
-                }, {
-                  label: 'OT finalizadas',
-                  value: historySummary.finalized.toString(),
-                  color: 'text-emerald-700',
-                  bg: 'bg-emerald-100',
-                }, {
-                  label: 'Tiempo promedio de reparación',
-                  value: formatHours(historySummary.avgRepairHours),
-                  color: 'text-blue-700',
-                  bg: 'bg-blue-100',
-                }, {
-                  label: 'Avances registrados',
-                  value: historySummary.totalAdvances.toString(),
-                  color: 'text-indigo-700',
-                  bg: 'bg-indigo-100',
-                }, {
-                  label: 'Vehículos distintos',
-                  value: historySummary.uniqueVehicles.toString(),
-                  color: 'text-amber-700',
-                  bg: 'bg-amber-100',
-                }, {
-                  label: 'Avances promedio por OT',
-                  value: historySummary.avgAdvancesPerOrder ? historySummary.avgAdvancesPerOrder.toFixed(1) : '0.0',
-                  color: 'text-purple-700',
-                  bg: 'bg-purple-100',
-                }].map((metric) => (
-                  <div key={metric.label} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{metric.label}</p>
-                    <p className={`mt-2 text-3xl font-bold ${metric.color}`}>{metric.value}</p>
-                    <div className={`mt-3 inline-flex items-center gap-2 rounded-full ${metric.bg} px-3 py-1 text-xs font-semibold ${metric.color}`}>
-                      Indicador histórico
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                  <h3 className="text-lg font-semibold text-slate-900">Fallas más frecuentes</h3>
-                  <p className="text-xs text-slate-500 mb-4">Principales solicitudes atendidas en tus OT.</p>
-                  {historySummary.topFallas.length === 0 ? (
-                    <p className="text-sm text-slate-500">Sin datos suficientes aún.</p>
-                  ) : (
-                    <ul className="space-y-2">
-                      {historySummary.topFallas.map((item) => (
-                        <li key={item.name} className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-sm text-slate-600">
-                          <span className="flex items-center gap-2">
-                            <span className="h-2 w-2 rounded-full bg-slate-300" />
-                            {item.name.charAt(0).toUpperCase() + item.name.slice(1)}
-                          </span>
-                          <span className="text-sm font-semibold text-slate-900">{item.count}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-
-                <div className="lg:col-span-2 space-y-4">
-                  {workHistory.slice(0, 6).map((order) => {
-                    const badge = getStatusStyles(order.estado_ot);
-                    const prioridad = (order.prioridad_ot || order.prioridad || 'normal').toLowerCase();
-                    const priorityClasses =
-                      prioridad === 'critica' || prioridad === 'crítica'
-                        ? 'bg-rose-100 text-rose-700'
-                        : prioridad === 'alta'
-                        ? 'bg-amber-100 text-amber-700'
-                        : 'bg-blue-100 text-blue-700';
-
-                    return (
-                      <div key={order.id_orden_trabajo} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                          <div className="space-y-2">
-                            <div className="flex flex-wrap items-center gap-2 text-sm font-semibold">
-                              <span className="inline-flex items-center gap-2 rounded-full bg-slate-800 px-3 py-1 text-sm font-semibold text-white">
-                                <Truck size={16} />
-                                {order.patente_vehiculo}
-                              </span>
-                              <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${priorityClasses}`}>
-                                {prioridad === 'critica' || prioridad === 'crítica'
-                                  ? 'Crítica'
-                                  : prioridad === 'alta'
-                                  ? 'Alta'
-                                  : 'Normal'}
-                              </span>
-                              <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${badge.classes}`}>
-                                {badge.label}
-                              </span>
-                            </div>
-                            <p className="text-sm text-slate-600">
-                              {order.marca_vehiculo} {order.modelo_vehiculo} · {order.falla_reportada}
-                            </p>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 text-xs text-slate-500">
-                              <p><strong>ID:</strong> #{order.id_orden_trabajo}</p>
-                              <p><strong>Inicio:</strong> {formatDate(order.fecha_inicio_ot)}</p>
-                              <p><strong>Cierre:</strong> {formatDate(order.fecha_cierre_ot)}</p>
-                              <p><strong>Agenda:</strong> {formatDate(order.fecha_programada)} · {order.hora_estimado || order.bloque_horario || 'N/A'}</p>
-                              <p><strong>Avances:</strong> {Array.isArray(order.avances) ? order.avances.length : 0}</p>
-                              <p><strong>Detalle:</strong> {order.detalle_reparacion || order.descripcion_ot || 'Sin registrar'}</p>
-                            </div>
-                          </div>
-                          <div className="flex flex-col items-stretch gap-2 md:items-end">
-                            <button
-                              onClick={() => handleGoToProgress(order)}
-                              className="inline-flex items-center gap-2 rounded-full bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow hover:bg-blue-700"
-                            >
-                              Abrir OT
-                            </button>
-                            {normalizeOrderState(order.estado_ot) === 'finalizada' && (
-                              <button
-                                onClick={() => {
-                                  setSelectedOT(order);
-                                  setEditDetailValue(order.detalle_reparacion || '');
-                                  setOrderUpdateData({
-                                    estado_ot: order.estado_ot || 'finalizada',
-                                    detalle_reparacion: order.detalle_reparacion || '',
-                                  });
-                                  setEditDetailModal(true);
-                                }}
-                                className="inline-flex items-center gap-2 rounded-full border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-                              >
-                                Actualizar detalle
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          )}
         </div>
       )}
 

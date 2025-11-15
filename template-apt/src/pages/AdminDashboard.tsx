@@ -1,10 +1,18 @@
 import { useState, useEffect } from 'react';
-import { Users, Key, ClipboardList, Calendar, Truck, Shield, Plus, Edit, Trash2, CheckCircle, XCircle, Layers, Activity, MapPin, ListChecks, Clock3, CalendarClock, SunMedium, Timer, Search, UserPlus, UserCircle, Phone, Mail } from 'lucide-react';
+import { Users, Key, ClipboardList, Calendar, Truck, Shield, Plus, Edit, Trash2, CheckCircle, XCircle, Layers, Activity, MapPin, ListChecks, Clock3, CalendarClock, SunMedium, Timer, Search, UserPlus, UserCircle, Phone, Mail, FileText } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import Modal from '../components/Modal';
 
 interface AdminDashboardProps {
-  activeSection?: 'usuarios' | 'vehiculos' | 'roles' | 'catalogos' | 'agenda' | 'flota' | 'auditoria';
+  activeSection?:
+    | 'usuarios'
+    | 'vehiculos'
+    | 'ordenes'
+    | 'roles'
+    | 'catalogos'
+    | 'agenda'
+    | 'flota'
+    | 'auditoria';
 }
 
 const ROLES = [
@@ -80,6 +88,7 @@ const ROLE_PROFILES: Record<
     modulos: [
       'admin-usuarios',
       'admin-vehiculos',
+      'admin-ordenes',
       'admin-roles',
       'admin-catalogos',
       'admin-agenda',
@@ -116,7 +125,7 @@ const ROLE_PROFILES: Record<
   mechanic: {
     titulo: 'Mecánico',
     landing: 'mechanic-assigned',
-    modulos: ['mechanic-assigned', 'mechanic-progress', 'mechanic-history'],
+    modulos: ['mechanic-ots'],
     widgets: ['ot-asignadas', 'progreso'],
   },
   jefe_taller: {
@@ -279,6 +288,25 @@ export default function AdminDashboard({ activeSection = 'usuarios' }: AdminDash
     duracion_reparacion: '4',
     dias_habiles: ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
   });
+  const initialNuevoUsuarioErrores = {
+    usuario: '',
+    clave: '',
+    nombre_completo: '',
+    rut: '',
+    telefono: '',
+    correo: '',
+  };
+  const NUEVO_USUARIO_FIELD_IDS: Record<
+    keyof typeof initialNuevoUsuarioErrores,
+    string
+  > = {
+    usuario: 'modal-nuevo-usuario-usuario',
+    clave: 'modal-nuevo-usuario-clave',
+    nombre_completo: 'modal-nuevo-usuario-nombre',
+    rut: 'modal-nuevo-usuario-rut',
+    telefono: 'modal-nuevo-usuario-telefono',
+    correo: 'modal-nuevo-usuario-correo',
+  };
   const [nuevoUsuarioForm, setNuevoUsuarioForm] = useState({
     usuario: '',
     clave: '',
@@ -286,8 +314,9 @@ export default function AdminDashboard({ activeSection = 'usuarios' }: AdminDash
     nombre_completo: '',
     rut: '',
     telefono: '',
-    correo: ''
+    correo: '',
   });
+  const [nuevoUsuarioErrores, setNuevoUsuarioErrores] = useState(initialNuevoUsuarioErrores);
   const [modalVehiculo, setModalVehiculo] = useState(false);
   const [vehiculoEditando, setVehiculoEditando] = useState<any | null>(null);
   const [vehiculoForm, setVehiculoForm] = useState({
@@ -300,6 +329,9 @@ export default function AdminDashboard({ activeSection = 'usuarios' }: AdminDash
     sucursal_id: '',
   });
   const [busquedaUsuarios, setBusquedaUsuarios] = useState('');
+  const [ordenesTrabajo, setOrdenesTrabajo] = useState<any[]>([]);
+  const [ordenesLoading, setOrdenesLoading] = useState(false);
+  const [busquedaOrdenes, setBusquedaOrdenes] = useState('');
   const diasHabilesSet = new Set(agendaConfig.dias_habiles || []);
 
   const readLocal = (key: string, fallback: any) => {
@@ -319,6 +351,145 @@ export default function AdminDashboard({ activeSection = 'usuarios' }: AdminDash
       return false;
     }
   };
+
+  const formatRutValue = (input: string) => {
+    const digits = input.replace(/\D/g, '').slice(0, 9);
+    if (!digits) return '';
+    if (digits.length <= 1) return digits;
+    const cuerpo = digits.slice(0, -1);
+    const dv = digits.slice(-1);
+    const cuerpoConPuntos = cuerpo.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    return `${cuerpoConPuntos}-${dv}`;
+  };
+
+  const formatTelefonoValue = (input: string) => {
+    const digits = input.replace(/\D/g, '');
+    if (!digits) return '';
+    let rest = digits;
+    if (rest.startsWith('569')) {
+      rest = rest.slice(3);
+    } else if (rest.startsWith('56')) {
+      rest = rest.slice(2);
+    } else if (rest.startsWith('9')) {
+      rest = rest.slice(1);
+    }
+    rest = rest.slice(0, 8);
+    if (!rest) {
+      return '+569';
+    }
+    const firstBlock = rest.slice(0, 4);
+    const secondBlock = rest.slice(4);
+    let formatted = '+569';
+    formatted += firstBlock ? ` ${firstBlock}` : '';
+    formatted += secondBlock ? ` ${secondBlock}` : '';
+    return formatted;
+  };
+
+  const getTelefonoDigits = (value: string) => {
+    const digits = value.replace(/\D/g, '');
+    if (!digits) return '';
+    if (digits.startsWith('569')) return digits.slice(3);
+    if (digits.startsWith('56')) return digits.slice(2);
+    if (digits.startsWith('9')) return digits.slice(1);
+    return digits;
+  };
+
+  const getPasswordStrength = (password: string) => {
+    const lengthScore = password.length >= 12 ? 2 : password.length >= 8 ? 1 : 0;
+    const hasLetters = /[A-Za-z]/.test(password);
+    const hasNumbers = /\d/.test(password);
+    const hasSpecial = /[^A-Za-z0-9]/.test(password);
+    let score = lengthScore;
+    if (hasLetters && hasNumbers) score += 1;
+    if (hasSpecial) score += 1;
+
+    if (!password) {
+      return { label: '', textColor: 'text-slate-400', barColor: 'bg-transparent', width: '0%' };
+    }
+
+    if (score >= 3) {
+      return { label: 'Segura', textColor: 'text-emerald-600', barColor: 'bg-emerald-500', width: '100%' };
+    }
+    if (score === 2) {
+      return { label: 'Media', textColor: 'text-amber-600', barColor: 'bg-amber-500', width: '66%' };
+    }
+    return { label: 'Débil', textColor: 'text-rose-600', barColor: 'bg-rose-500', width: '33%' };
+  };
+
+  const validateNuevoUsuarioForm = () => {
+    const errors = { ...initialNuevoUsuarioErrores };
+    const username = nuevoUsuarioForm.usuario.trim();
+    const password = nuevoUsuarioForm.clave.trim();
+    const nombre = nuevoUsuarioForm.nombre_completo.trim();
+    const rutDigits = nuevoUsuarioForm.rut.replace(/\D/g, '');
+    const telefonoDigits = getTelefonoDigits(nuevoUsuarioForm.telefono);
+    const correo = nuevoUsuarioForm.correo.trim();
+
+    if (!username) {
+      errors.usuario = 'El nombre de usuario es obligatorio.';
+    } else {
+      if (!/^[A-Za-z0-9]+$/.test(username)) {
+        errors.usuario = 'Solo se permiten letras y números.';
+      } else if (username.length > 50) {
+        errors.usuario = 'Máximo 50 caracteres.';
+      }
+    }
+
+    if (!password) {
+      errors.clave = 'La contraseña es obligatoria.';
+    } else {
+      if (password.length < 8) {
+        errors.clave = 'La contraseña debe tener al menos 8 caracteres.';
+      } else if (!/[A-Za-z]/.test(password) || !/\d/.test(password)) {
+        errors.clave = 'Debe incluir letras y números.';
+      }
+    }
+
+    if (!nombre) {
+      errors.nombre_completo = 'El nombre completo es obligatorio.';
+    } else if (!/^[A-Za-zÁÉÍÓÚáéíóúÑñ\s]+$/.test(nombre)) {
+      errors.nombre_completo = 'Solo se permiten letras.';
+    }
+
+    if (!rutDigits) {
+      errors.rut = 'El RUT es obligatorio.';
+    } else if (rutDigits.length !== 9) {
+      errors.rut = 'Debe tener 9 dígitos.';
+    }
+
+    if (telefonoDigits && telefonoDigits.length !== 8) {
+      errors.telefono = 'Debe tener 8 dígitos después de +569.';
+    }
+
+    if (!correo) {
+      errors.correo = 'El correo es obligatorio.';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo)) {
+      errors.correo = 'Formato de correo inválido.';
+    }
+
+    const isValid = Object.values(errors).every((msg) => !msg);
+    setNuevoUsuarioErrores(errors);
+
+    if (!isValid) {
+      const firstErrorKey = (Object.keys(errors) as (keyof typeof errors)[]).find(
+        (key) => errors[key]
+      );
+      if (firstErrorKey) {
+        const targetId = NUEVO_USUARIO_FIELD_IDS[firstErrorKey];
+        if (typeof window !== 'undefined' && targetId) {
+          const element = document.getElementById(targetId);
+          if (element) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            (element as HTMLElement).focus({ preventScroll: true });
+          }
+        }
+        alert(errors[firstErrorKey]);
+      }
+    }
+
+    return isValid;
+  };
+  const passwordStrength = getPasswordStrength(nuevoUsuarioForm.clave || '');
 
   const ensureCargoForRole = (role: string) => {
     const cargoName = getPreferredCargoName(role);
@@ -528,6 +699,8 @@ export default function AdminDashboard({ activeSection = 'usuarios' }: AdminDash
       loadVehiculos();
       loadChoferes();
       loadCatalogos();
+    } else if (activeSection === 'ordenes') {
+      loadOrdenesTrabajo();
     } else if (activeSection === 'catalogos') {
       loadCatalogos();
     } else if (activeSection === 'flota') {
@@ -965,6 +1138,189 @@ export default function AdminDashboard({ activeSection = 'usuarios' }: AdminDash
     }
   };
 
+  const loadOrdenesTrabajo = async () => {
+    try {
+      setLoading(true);
+      setOrdenesLoading(true);
+      let ordenesData: any[] = readLocal('apt_ordenes_trabajo', []);
+      let solicitudesLocales: any[] = readLocal('apt_solicitudes_diagnostico', []);
+
+      if (hasSupabase) {
+        const [{ data: ordenesDb, error: ordenesError }, { data: solicitudesDb, error: solicitudesError }] =
+          await Promise.all([
+            supabase
+              .from('orden_trabajo')
+              .select(
+                `
+                  id_orden_trabajo,
+                  descripcion_ot,
+                  estado_ot,
+                  prioridad_ot,
+                  fecha_inicio_ot,
+                  fecha_cierre_ot,
+                  fecha_programada_reparacion,
+                  hora_programada_reparacion,
+                  hora_confirmada,
+                  estado_reparacion,
+                  vehiculo:vehiculo_id (
+                    id_vehiculo,
+                    patente_vehiculo
+                  ),
+                  solicitud:solicitud_diagnostico_id (
+                    id_solicitud_diagnostico,
+                tipo_problema,
+                comentarios,
+                    empleado_id,
+                    patente_vehiculo,
+                    fecha_confirmada,
+                    bloque_horario_confirmado,
+                    empleado:empleado_id (
+                      id_empleado,
+                      nombre,
+                      apellido_paterno
+                    )
+                  ),
+                  created_at
+                `
+              )
+              .order('created_at', { ascending: false }),
+          supabase
+            .from('solicitud_diagnostico')
+            .select(
+              `
+                id_solicitud_diagnostico,
+                estado_solicitud,
+                tipo_problema,
+                comentarios,
+                prioridad,
+                empleado_id,
+                patente_vehiculo,
+                fecha_solicitada,
+                fecha_confirmada,
+                bloque_horario,
+                bloque_horario_confirmado,
+                created_at,
+                empleado:empleado_id (
+                  id_empleado,
+                  nombre,
+                  apellido_paterno
+                )
+              `
+            )
+            .order('created_at', { ascending: false }),
+          ]);
+
+        if (ordenesError) throw ordenesError;
+        if (solicitudesError) throw solicitudesError;
+
+        ordenesData = Array.isArray(ordenesDb) ? ordenesDb : [];
+        solicitudesLocales = Array.isArray(solicitudesDb) ? solicitudesDb : [];
+      }
+
+      const formatted = (ordenesData || []).map((orden: any) => {
+        const solicitud =
+          orden.solicitud ||
+          solicitudesLocales.find(
+            (s: any) =>
+              s.id_solicitud_diagnostico === orden.solicitud_diagnostico_id ||
+              s.id === orden.solicitud_diagnostico_id
+          ) ||
+          null;
+
+        const patente =
+          orden?.vehiculo?.patente_vehiculo ||
+          orden.patente_vehiculo ||
+          solicitud?.patente_vehiculo ||
+          'N/A';
+
+        const driverName =
+          solicitud?.empleado
+            ? `${solicitud.empleado.nombre || ''} ${solicitud.empleado.apellido_paterno || ''}`.trim()
+            : solicitud?.nombre_conductor || solicitud?.nombre_chofer || 'Sin registro';
+
+        const prioridad = orden.prioridad_ot || orden.prioridad || solicitud?.prioridad || 'media';
+        const problema =
+          orden.descripcion_ot ||
+          solicitud?.tipo_problema ||
+          solicitud?.motivo_consulta ||
+          solicitud?.descripcion_problema ||
+          solicitud?.comentarios ||
+          'Sin descripción';
+
+        const programacionFecha =
+          orden.fecha_programada_reparacion || solicitud?.fecha_confirmada || orden.fecha_inicio_ot || orden.created_at;
+
+        const mechanicName = orden.mecanico_nombre || 'Pendiente';
+
+        const programacionHora =
+          orden.hora_programada_reparacion || solicitud?.bloque_horario_confirmado || orden.hora_confirmada || null;
+
+        return {
+          ...orden,
+          solicitud,
+          patente,
+          driverName,
+          mecanico_nombre: mechanicName,
+          prioridad,
+          problema,
+          programacionFecha,
+          programacionHora,
+        };
+      });
+
+      const solicitudesExtras = (solicitudesLocales || [])
+        .filter((solicitud: any) => {
+          const solicitudId = solicitud.id_solicitud_diagnostico || solicitud.id;
+          if (!solicitudId) return false;
+          return !ordenesData.some(
+            (orden: any) =>
+              orden.solicitud_diagnostico_id === solicitudId ||
+              orden.solicitud?.id_solicitud_diagnostico === solicitudId
+          );
+        })
+        .map((solicitud: any) => {
+          const driverName = solicitud.empleado
+            ? `${solicitud.empleado.nombre || ''} ${solicitud.empleado.apellido_paterno || ''}`.trim()
+            : 'Sin registro';
+
+          const programacionFecha =
+            solicitud.fecha_confirmada || solicitud.fecha_solicitada || solicitud.created_at;
+
+          return {
+            id_orden_trabajo: `SD-${solicitud.id_solicitud_diagnostico || solicitud.id}`,
+            solicitud,
+            driverName,
+            prioridad: solicitud.prioridad || 'media',
+            problema:
+              solicitud.tipo_problema ||
+              solicitud.motivo_consulta ||
+              solicitud.descripcion_problema ||
+              solicitud.comentarios ||
+              'Diagnóstico solicitado',
+            patente: solicitud.patente_vehiculo || 'N/A',
+            programacionFecha,
+            programacionHora: solicitud.bloque_horario_confirmado || solicitud.bloque_horario,
+            estado_ot: solicitud.estado_solicitud || 'pendiente_confirmacion',
+            created_at: solicitud.created_at,
+            esSolicitud: true,
+          };
+        });
+
+      const combined = [...formatted, ...solicitudesExtras].sort((a, b) => {
+        const dateA = parseDateValue(a.programacionFecha || a.fecha_inicio_ot || a.created_at)?.getTime() || 0;
+        const dateB = parseDateValue(b.programacionFecha || b.fecha_inicio_ot || b.created_at)?.getTime() || 0;
+        return dateB - dateA;
+      });
+
+      setOrdenesTrabajo(combined);
+    } catch (error) {
+      console.error('Error loading órdenes de trabajo:', error);
+    } finally {
+      setOrdenesLoading(false);
+      setLoading(false);
+    }
+  };
+
   const handleAsignarVehiculo = (chofer: any) => {
     // Cargar catálogos si no están cargados (para tener las sucursales disponibles)
     if (!catalogos.zonas || catalogos.zonas.length === 0) {
@@ -1029,6 +1385,11 @@ export default function AdminDashboard({ activeSection = 'usuarios' }: AdminDash
 
     const vehiculoId = vehiculoSeleccionado ? parseInt(vehiculoSeleccionado, 10) : null;
     const sucursalId = sucursalSeleccionada ? parseInt(sucursalSeleccionada, 10) : null;
+
+    if (!vehiculoId || !sucursalId) {
+      alert('Debes seleccionar un vehículo y una sucursal antes de guardar.');
+      return;
+    }
 
     console.log('💾 Guardando asignación:', {
       chofer: selectedChofer.usuario,
@@ -1726,11 +2087,22 @@ export default function AdminDashboard({ activeSection = 'usuarios' }: AdminDash
       telefono: '',
       correo: ''
     });
+    setNuevoUsuarioErrores(initialNuevoUsuarioErrores);
     setModalNuevoUsuario(true);
   };
 
   const handleGuardarNuevoUsuario = async () => {
-    console.log('🔵 Intentando crear usuario:', nuevoUsuarioForm);
+    if (!validateNuevoUsuarioForm()) {
+      return;
+    }
+
+    const username = nuevoUsuarioForm.usuario.trim();
+    const password = nuevoUsuarioForm.clave.trim();
+    const nombreCompleto = nuevoUsuarioForm.nombre_completo.trim();
+    const rutFormateado = formatRutValue(nuevoUsuarioForm.rut);
+    const telefonoDigits = getTelefonoDigits(nuevoUsuarioForm.telefono);
+    const telefonoFormateado = telefonoDigits ? formatTelefonoValue(`+569${telefonoDigits}`) : '';
+    const correoNormalizado = nuevoUsuarioForm.correo.trim();
 
     if (hasSupabase) {
       try {
@@ -1745,32 +2117,24 @@ export default function AdminDashboard({ activeSection = 'usuarios' }: AdminDash
           (u.usuario || '').toLowerCase()
         );
 
-        const primaryToken =
-          extractPrimaryToken(nuevoUsuarioForm.nombre_completo) ||
-          nuevoUsuarioForm.usuario ||
-          nuevoUsuarioForm.rol ||
-          'usuario';
-
-        let username = (nuevoUsuarioForm.usuario || '').trim();
-        let usernameGenerado = false;
-        if (!username) {
-          username = generateUniqueUsername(primaryToken, existingUsernames);
-          username = capitalizeFirst(username);
-          usernameGenerado = true;
-        } else {
-          username = username.trim();
-        }
-
         if (existingUsernames.includes(username.toLowerCase())) {
           alert('❌ Este nombre de usuario ya existe. Por favor elige otro.');
           return;
         }
 
-        let password = (nuevoUsuarioForm.clave || '').trim();
-        let passwordGenerada = false;
-        if (!password) {
-          password = generateDefaultPassword(primaryToken || username);
-          passwordGenerada = true;
+        const { data: rutExistente, error: rutError } = await supabase
+          .from('empleado')
+          .select('rut')
+          .ilike('rut', rutFormateado || '')
+          .maybeSingle();
+
+        if (rutError && rutError.code !== 'PGRST116') {
+          throw rutError;
+        }
+
+        if (rutExistente) {
+          alert('❌ Este RUT ya está registrado en otro usuario.');
+          return;
         }
 
         const { data: usuarioInsertado, error: usuarioError } = await supabase
@@ -1788,8 +2152,8 @@ export default function AdminDashboard({ activeSection = 'usuarios' }: AdminDash
           throw usuarioError;
         }
 
-        const [nombre, ...apellidos] = nuevoUsuarioForm.nombre_completo
-          ? nuevoUsuarioForm.nombre_completo.trim().split(/\s+/).filter(Boolean)
+        const [nombre, ...apellidos] = nombreCompleto
+          ? nombreCompleto.split(/\s+/).filter(Boolean)
           : [capitalizeFirst(username)];
 
         const apellidoPaterno = apellidos[0] || '';
@@ -1811,9 +2175,9 @@ export default function AdminDashboard({ activeSection = 'usuarios' }: AdminDash
             nombre: nombre || capitalizeFirst(username),
             apellido_paterno: apellidoPaterno,
             apellido_materno: apellidoMaterno,
-            rut: nuevoUsuarioForm.rut || null,
-            email: nuevoUsuarioForm.correo || null,
-            telefono1: nuevoUsuarioForm.telefono || null,
+            rut: rutFormateado || null,
+            email: correoNormalizado || null,
+            telefono1: telefonoFormateado || null,
             cargo_id: cargoAsociado.id_cargo,
             usuario_id: usuarioInsertado.id_usuario,
             estado_empleado: 'activo',
@@ -1838,12 +2202,6 @@ export default function AdminDashboard({ activeSection = 'usuarios' }: AdminDash
         if (cargoAsociado) {
           mensajes.push(`Perfil asignado: ${cargoAsociado.nombre_cargo}`);
         }
-        if (usernameGenerado || passwordGenerada) {
-          mensajes.push(
-            '💡 Credenciales generadas automáticamente. Puedes modificarlas luego desde la administración.'
-          );
-        }
-
         alert(mensajes.join('\n'));
         setModalNuevoUsuario(false);
         setNuevoUsuarioForm({
@@ -1855,6 +2213,7 @@ export default function AdminDashboard({ activeSection = 'usuarios' }: AdminDash
           telefono: '',
           correo: '',
         });
+        setNuevoUsuarioErrores(initialNuevoUsuarioErrores);
 
         await Promise.all([loadUsuarios(), loadUsuariosAuditoria(), loadChoferes()]);
         return;
@@ -1875,32 +2234,19 @@ export default function AdminDashboard({ activeSection = 'usuarios' }: AdminDash
       (u: any) => (u.usuario || '').toLowerCase()
     );
 
-    const primaryToken =
-      extractPrimaryToken(nuevoUsuarioForm.nombre_completo) ||
-      nuevoUsuarioForm.usuario ||
-      nuevoUsuarioForm.rol ||
-      'usuario';
-
-    let username = (nuevoUsuarioForm.usuario || '').trim();
-    let usernameGenerado = false;
-    if (!username) {
-      username = generateUniqueUsername(primaryToken, existingUsernames);
-      username = capitalizeFirst(username);
-      usernameGenerado = true;
-    } else {
-      username = username.trim();
-    }
-
     if (existingUsernames.includes(username.toLowerCase())) {
       alert('❌ Este nombre de usuario ya existe. Por favor elige otro.');
       return;
     }
 
-    let password = (nuevoUsuarioForm.clave || '').trim();
-    let passwordGenerada = false;
-    if (!password) {
-      password = generateDefaultPassword(primaryToken || username);
-      passwordGenerada = true;
+    const empleadosLocales = readLocal('apt_empleados', []);
+    const rutDuplicadoLocal = empleadosLocales.some(
+      (emp: any) => (emp.rut_empleado || '').toLowerCase() === (rutFormateado || '').toLowerCase()
+    );
+
+    if (rutDuplicadoLocal) {
+      alert('❌ Este RUT ya está registrado en otro usuario.');
+      return;
     }
 
     const usuarioId = Date.now();
@@ -1918,9 +2264,9 @@ export default function AdminDashboard({ activeSection = 'usuarios' }: AdminDash
     console.log('✅ Nuevo usuario guardado:', nuevoUsuario);
     console.log('📦 Usuarios actualizados:', usuariosActualizados);
 
-    const empleados = readLocal('apt_empleados', []);
-    const [nombre, ...apellidos] = nuevoUsuarioForm.nombre_completo
-      ? nuevoUsuarioForm.nombre_completo.trim().split(/\s+/).filter(Boolean)
+    const empleados = empleadosLocales;
+    const [nombre, ...apellidos] = nombreCompleto
+      ? nombreCompleto.split(/\s+/).filter(Boolean)
       : [capitalizeFirst(username)];
 
     const cargoAsociado = ensureCargoForRole(nuevoUsuarioForm.rol);
@@ -1930,9 +2276,9 @@ export default function AdminDashboard({ activeSection = 'usuarios' }: AdminDash
       nombre: nombre || capitalizeFirst(username),
       apellido_paterno: apellidos[0] || '',
       apellido_materno: apellidos[1] || '',
-      rut_empleado: nuevoUsuarioForm.rut || 'N/A',
-      correo_empleado: nuevoUsuarioForm.correo || 'N/A',
-      telefono_empleado: nuevoUsuarioForm.telefono || 'N/A',
+      rut_empleado: rutFormateado || 'N/A',
+      correo_empleado: correoNormalizado || 'N/A',
+      telefono_empleado: telefonoFormateado || 'N/A',
       cargo_id: cargoAsociado?.id_cargo || null,
       cargo_nombre: cargoAsociado?.nombre_cargo || null,
       rol: nuevoUsuarioForm.rol,
@@ -1952,10 +2298,6 @@ export default function AdminDashboard({ activeSection = 'usuarios' }: AdminDash
     if (cargoAsociado) {
       mensajes.push(`Perfil asignado: ${cargoAsociado.nombre_cargo}`);
     }
-    if (usernameGenerado || passwordGenerada) {
-      mensajes.push('💡 Credenciales generadas automáticamente. Puedes modificarlas luego desde la administración.');
-    }
-
     alert(mensajes.join('\n'));
     setModalNuevoUsuario(false);
     setNuevoUsuarioForm({
@@ -1967,6 +2309,7 @@ export default function AdminDashboard({ activeSection = 'usuarios' }: AdminDash
       telefono: '',
       correo: '',
     });
+    setNuevoUsuarioErrores(initialNuevoUsuarioErrores);
     
     // Recargar todas las vistas para que se actualicen
     loadUsuariosAuditoria();
@@ -2373,6 +2716,161 @@ export default function AdminDashboard({ activeSection = 'usuarios' }: AdminDash
     driver: 'bg-yellow-100 text-yellow-700',
   };
 
+  const parseDateValue = (value?: string | null) => {
+    if (!value) return null;
+    const date = new Date(value);
+    return isNaN(date.getTime()) ? null : date;
+  };
+
+  const formatDateLabel = (value?: string | null) => {
+    const date = parseDateValue(value);
+    if (!date) return null;
+    return date.toLocaleDateString('es-CL', { day: '2-digit', month: 'short', year: 'numeric' });
+  };
+
+  const formatDateTimeLabel = (value?: string | null) => {
+    const date = parseDateValue(value);
+    if (!date) return null;
+    return (
+      date.toLocaleDateString('es-CL', { day: '2-digit', month: 'short', year: 'numeric' }) +
+      ' · ' +
+      date.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })
+    );
+  };
+
+  const formatHourValue = (value?: string | null) => {
+    if (!value) return null;
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    if (trimmed.includes('T')) {
+      const parsed = new Date(trimmed);
+      if (!isNaN(parsed.getTime())) {
+        return parsed.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
+      }
+    }
+    return trimmed;
+  };
+
+  const estadoBadgeMap: Record<
+    string,
+    {
+      label: string;
+      classes: string;
+    }
+  > = {
+    pendiente: { label: 'Pendiente', classes: 'bg-amber-100 text-amber-700 border border-amber-200' },
+    pendiente_confirmacion: { label: 'Pendiente de confirmación', classes: 'bg-lime-100 text-lime-700 border border-lime-200' },
+    en_diagnostico_programado: { label: 'Diagnóstico programado', classes: 'bg-blue-100 text-blue-700 border border-blue-200' },
+    'en curso': { label: 'En curso', classes: 'bg-indigo-100 text-indigo-700 border border-indigo-200' },
+    en_reparacion: { label: 'En reparación', classes: 'bg-purple-100 text-purple-700 border border-purple-200' },
+    esperando_repuestos: { label: 'Esperando repuestos', classes: 'bg-orange-100 text-orange-700 border border-orange-200' },
+    en_pruebas: { label: 'En pruebas', classes: 'bg-cyan-100 text-cyan-700 border border-cyan-200' },
+    finalizada: { label: 'Finalizada', classes: 'bg-emerald-100 text-emerald-700 border border-emerald-200' },
+    cerrada: { label: 'Cerrada', classes: 'bg-slate-200 text-slate-700 border border-slate-300' },
+    default: { label: 'Sin estado', classes: 'bg-slate-100 text-slate-600 border border-slate-200' },
+  };
+
+  const getEstadoBadge = (estado?: string | null) => {
+    const normalized = (estado || 'pendiente').toLowerCase();
+    return estadoBadgeMap[normalized] || estadoBadgeMap.default;
+  };
+
+  const getPatenteFromOrden = (orden: any) =>
+    orden?.patente ||
+    orden?.vehiculo?.patente_vehiculo ||
+    orden?.solicitud?.patente_vehiculo ||
+    'Sin patente';
+
+  const getProblemaFromOrden = (orden: any) =>
+    orden?.problema ||
+    orden?.descripcion_ot ||
+    orden?.solicitud?.tipo_problema ||
+    orden?.solicitud?.motivo_consulta ||
+    orden?.solicitud?.comentarios ||
+    'Diagnóstico programado';
+
+  const getDriverName = (orden: any) =>
+    orden?.driverName ||
+    (orden?.solicitud?.empleado
+      ? `${orden.solicitud.empleado.nombre || ''} ${orden.solicitud.empleado.apellido_paterno || ''}`.trim()
+      : null) ||
+    'Sin chofer';
+
+  const getMechanicName = (orden: any) =>
+    orden?.mecanico_nombre || orden?.mecanico_principal_nombre || 'Pendiente';
+
+  const terminoBusquedaOT = busquedaOrdenes.trim().toLowerCase();
+  const ordenesFiltradas = ordenesTrabajo.filter((orden: any) => {
+    if (!terminoBusquedaOT) return true;
+    const fields = [
+      `ot-${orden.id_orden_trabajo}`,
+      getPatenteFromOrden(orden),
+      getDriverName(orden),
+      getMechanicName(orden),
+      getProblemaFromOrden(orden),
+      orden.estado_ot,
+    ];
+    return fields
+      .filter(Boolean)
+      .some((field) => field.toString().toLowerCase().includes(terminoBusquedaOT));
+  });
+
+  const estadoCounts = ordenesTrabajo.reduce<Record<string, number>>((acc, orden: any) => {
+    const key = (orden.estado_ot || 'pendiente').toLowerCase();
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+
+  const resumenTarjetas = [
+    {
+      key: 'total',
+      label: 'OT registradas',
+      value: ordenesTrabajo.length,
+      description: 'Historial total del sistema',
+      accent: 'text-blue-600',
+    },
+    {
+      key: 'pendientes',
+      label: 'Pendientes',
+      value: (estadoCounts.pendiente || 0) + (estadoCounts.pendiente_confirmacion || 0),
+      description: 'A la espera de confirmación',
+      accent: 'text-amber-600',
+    },
+    {
+      key: 'diagnostico',
+      label: 'En diagnóstico',
+      value: (estadoCounts.en_diagnostico_programado || 0) + (estadoCounts['en curso'] || 0),
+      description: 'En programación o ejecución',
+      accent: 'text-indigo-600',
+    },
+    {
+      key: 'reparacion',
+      label: 'En reparación',
+      value:
+        (estadoCounts.en_reparacion || 0) +
+        (estadoCounts.esperando_repuestos || 0) +
+        (estadoCounts.en_pruebas || 0),
+      description: 'Bajo control del taller',
+      accent: 'text-purple-600',
+    },
+    {
+      key: 'cerradas',
+      label: 'Cerradas',
+      value: (estadoCounts.finalizada || 0) + (estadoCounts.cerrada || 0),
+      description: 'Completadas y cerradas',
+      accent: 'text-emerald-600',
+    },
+  ];
+
+  const ultimaActualizacionOrdenes = ordenesTrabajo.length
+    ? formatDateTimeLabel(
+        ordenesTrabajo[0]?.fecha_cierre_ot ||
+          ordenesTrabajo[0]?.programacionFecha ||
+          ordenesTrabajo[0]?.fecha_inicio_ot ||
+          ordenesTrabajo[0]?.created_at
+      )
+    : null;
+
   if (loading) {
     return <div className="text-center py-8">Cargando...</div>;
   }
@@ -2496,7 +2994,6 @@ export default function AdminDashboard({ activeSection = 'usuarios' }: AdminDash
                           <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Identificación</th>
                           <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Rol</th>
                           <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Estado</th>
-                          <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Acciones</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 bg-white">
@@ -2551,39 +3048,6 @@ export default function AdminDashboard({ activeSection = 'usuarios' }: AdminDash
                                     Inactivo
                                   </span>
                                 )}
-                              </td>
-                              <td className="px-6 py-4">
-                                <div className="flex items-center gap-2">
-                                  <button className="rounded-full border border-slate-200 p-2 text-blue-600 transition hover:bg-blue-50 hover:text-blue-700" title="Editar usuario">
-                                    <Edit size={16} />
-                                  </button>
-                                  {usuario.estado_usuario ? (
-                                    <button
-                                      onClick={() => handleDesactivarUsuario(usuario)}
-                                      className="rounded-full border border-slate-200 p-2 text-red-600 transition hover:bg-red-50 hover:text-red-700"
-                                      title="Desactivar usuario"
-                                    >
-                                      <XCircle size={16} />
-                                    </button>
-                                  ) : (
-                                    <button
-                                      onClick={() => handleActivarUsuario(usuario)}
-                                      className="rounded-full border border-slate-200 p-2 text-green-600 transition hover:bg-green-50 hover:text-green-700"
-                                      title="Activar usuario"
-                                    >
-                                      <CheckCircle size={16} />
-                                    </button>
-                                  )}
-                                  {(usuario.rol !== 'admin' || (usuario.usuario || '').toLowerCase() !== 'admin') && (
-                                    <button
-                                      onClick={() => handleEliminarUsuario(usuario)}
-                                      className="rounded-full border border-slate-200 p-2 text-red-500 transition hover:bg-red-50 hover:text-red-600"
-                                      title="Eliminar usuario"
-                                    >
-                                      <Trash2 size={16} />
-                                    </button>
-                                  )}
-                                </div>
                               </td>
                             </tr>
                           );
@@ -2691,6 +3155,179 @@ export default function AdminDashboard({ activeSection = 'usuarios' }: AdminDash
                 )}
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Contenido de Órdenes de Trabajo */}
+      {activeSection === 'ordenes' && (
+        <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg">
+          <div className="absolute inset-0 bg-gradient-to-br from-indigo-50 via-white to-slate-50 opacity-90 pointer-events-none" />
+          <div className="relative z-10 p-6 pb-10 space-y-6">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <div className="inline-flex items-center gap-2 rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-700">
+                  <FileText size={14} />
+                  Seguimiento centralizado
+                </div>
+                <h1 className="mt-3 text-3xl font-bold text-slate-900">Órdenes de Trabajo</h1>
+                <p className="text-slate-600">
+                  Visualiza el estado operativo de cada OT, desde la solicitud hasta el cierre técnico.
+                </p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-white/80 p-4 text-right shadow-sm">
+                <p className="text-xs uppercase tracking-wide text-slate-400">Registros cargados</p>
+                <p className="text-3xl font-bold text-blue-600">{ordenesTrabajo.length}</p>
+                <p className="text-xs text-slate-500">
+                  Última actualización:{' '}
+                  <span className="font-semibold text-slate-700">{ultimaActualizacionOrdenes || 'En vivo'}</span>
+                </p>
+              </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+              {resumenTarjetas.map((card) => (
+                <div key={card.key} className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{card.label}</p>
+                  <p className={`mt-2 text-3xl font-bold ${card.accent}`}>{card.value}</p>
+                  <p className="text-xs text-slate-500">{card.description}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div className="relative w-full md:max-w-md">
+                <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={busquedaOrdenes}
+                  onChange={(e) => setBusquedaOrdenes(e.target.value)}
+                  placeholder="Buscar por OT, patente, chofer, mecánico o estado..."
+                  className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm text-slate-700 shadow-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                />
+              </div>
+              <div className="text-xs text-slate-500 text-right md:text-left">
+                {terminoBusquedaOT
+                  ? `${ordenesFiltradas.length} coincidencias para "${busquedaOrdenes.trim()}"`
+                  : `Mostrando ${ordenesTrabajo.length} órdenes registradas`}
+              </div>
+            </div>
+
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+              {ordenesLoading ? (
+                <div className="py-16 text-center text-slate-500">Cargando órdenes de trabajo...</div>
+              ) : ordenesFiltradas.length === 0 ? (
+                <div className="py-16 text-center text-slate-500">
+                  <FileText className="mx-auto mb-4 text-slate-300" size={40} />
+                  {ordenesTrabajo.length === 0
+                    ? 'Aún no hay órdenes registradas en el sistema.'
+                    : 'No se encontraron órdenes que coincidan con la búsqueda.'}
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-slate-200">
+                    <thead className="bg-slate-50/80">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          Orden
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          Responsables
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          Programación
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          Estado
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {ordenesFiltradas.map((orden: any) => {
+                        const patente = getPatenteFromOrden(orden);
+                        const problema = getProblemaFromOrden(orden);
+                        const driver = getDriverName(orden);
+                        const mechanic = getMechanicName(orden);
+                        const diagnosticoProgramado =
+                          formatDateTimeLabel(orden.fecha_inicio_ot || orden.programacionFecha || orden.created_at) ||
+                          'Sin programar';
+                        const reparacionFecha =
+                          formatDateLabel(orden.fecha_programada_reparacion || orden.programacionFecha) || 'Sin fecha';
+                        const reparacionHora = formatHourValue(
+                          orden.hora_programada_reparacion || orden.programacionHora
+                        );
+                        const badge = getEstadoBadge(orden.estado_ot);
+                        const ultimaActualizacion =
+                          formatDateTimeLabel(
+                            orden.fecha_cierre_ot ||
+                              orden.programacionFecha ||
+                              orden.fecha_inicio_ot ||
+                              orden.created_at
+                          ) || 'Sin registro';
+
+                        return (
+                          <tr key={orden.id_orden_trabajo} className="transition hover:bg-blue-50/40">
+                            <td className="px-6 py-4">
+                              <div className="space-y-1">
+                                <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                                  OT #{orden.id_orden_trabajo}
+                                </span>
+                                <p className="text-sm font-semibold text-slate-900">{patente}</p>
+                                <p className="text-xs text-slate-500">{problema}</p>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="space-y-3 text-sm text-slate-700">
+                                <div>
+                                  <p className="font-semibold">{driver}</p>
+                                  <p className="text-xs text-slate-500">Chofer</p>
+                                </div>
+                                <div>
+                                  <p className="font-semibold">{mechanic}</p>
+                                  <p className="text-xs text-slate-500">Mecánico asignado</p>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="space-y-3 text-sm text-slate-700">
+                                <div>
+                                  <p className="text-[11px] uppercase font-semibold tracking-wide text-slate-400">
+                                    Diagnóstico
+                                  </p>
+                                  <p>{diagnosticoProgramado}</p>
+                                </div>
+                                <div>
+                                  <p className="text-[11px] uppercase font-semibold tracking-wide text-slate-400">
+                                    Reparación
+                                  </p>
+                                  <p>
+                                    {reparacionFecha}
+                                    {reparacionHora ? ` • ${reparacionHora}` : ''}
+                                  </p>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="space-y-3">
+                                <span
+                                  className={`inline-flex items-center justify-center rounded-full px-3 py-1 text-xs font-semibold ${badge.classes}`}
+                                >
+                                  {badge.label}
+                                </span>
+                                <div className="text-xs text-slate-500">
+                                  <p>Último evento</p>
+                                  <p className="font-semibold text-slate-700">{ultimaActualizacion}</p>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -3863,6 +4500,7 @@ export default function AdminDashboard({ activeSection = 'usuarios' }: AdminDash
         onClose={() => {
           setModalNuevoUsuario(false);
           setNuevoUsuarioForm({ usuario: '', clave: '', rol: 'driver', nombre_completo: '', rut: '', telefono: '', correo: '' });
+          setNuevoUsuarioErrores(initialNuevoUsuarioErrores);
         }} 
         title="Agregar Usuario Nuevo de la Empresa"
       >
@@ -3872,12 +4510,25 @@ export default function AdminDashboard({ activeSection = 'usuarios' }: AdminDash
               Nombre de Usuario * <span className="text-gray-500 text-xs">(para iniciar sesión)</span>
             </label>
             <input
+              id="modal-nuevo-usuario-usuario"
               type="text"
               value={nuevoUsuarioForm.usuario}
-              onChange={(e) => setNuevoUsuarioForm({ ...nuevoUsuarioForm, usuario: e.target.value })}
+              onChange={(e) => {
+                const value = e.target.value.replace(/[^A-Za-z0-9]/g, '').slice(0, 50);
+                setNuevoUsuarioForm({ ...nuevoUsuarioForm, usuario: value });
+                if (nuevoUsuarioErrores.usuario) {
+                  setNuevoUsuarioErrores((prev) => ({ ...prev, usuario: '' }));
+                }
+              }}
               placeholder="Ej: jperez, mgarcia"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
+                nuevoUsuarioErrores.usuario ? 'border-rose-400' : 'border-gray-300'
+              }`}
             />
+            <p className="text-xs text-gray-500 mt-1">Solo letras y números. Máximo 50 caracteres.</p>
+            {nuevoUsuarioErrores.usuario && (
+              <p className="text-xs text-rose-600 mt-1">{nuevoUsuarioErrores.usuario}</p>
+            )}
           </div>
 
           <div>
@@ -3885,15 +4536,43 @@ export default function AdminDashboard({ activeSection = 'usuarios' }: AdminDash
               Contraseña *
             </label>
             <input
-              type="text"
+              id="modal-nuevo-usuario-clave"
+              type="password"
+              autoComplete="new-password"
               value={nuevoUsuarioForm.clave}
-              onChange={(e) => setNuevoUsuarioForm({ ...nuevoUsuarioForm, clave: e.target.value })}
+              onChange={(e) => {
+                const value = e.target.value.replace(/\s/g, '');
+                setNuevoUsuarioForm({ ...nuevoUsuarioForm, clave: value });
+                if (nuevoUsuarioErrores.clave) {
+                  setNuevoUsuarioErrores((prev) => ({ ...prev, clave: '' }));
+                }
+              }}
               placeholder="Ej: password123"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
+                nuevoUsuarioErrores.clave ? 'border-rose-400' : 'border-gray-300'
+              }`}
             />
-            <p className="text-xs text-gray-500 mt-1">
-              La contraseña será visible para el administrador
-            </p>
+            {nuevoUsuarioErrores.clave && (
+              <p className="text-xs text-rose-600 mt-1">{nuevoUsuarioErrores.clave}</p>
+            )}
+            <div className="mt-2">
+              <div className="flex items-center justify-between text-xs text-slate-500">
+                <span>
+                  Seguridad:{' '}
+                  <span className={`font-semibold ${passwordStrength.textColor}`}>
+                    {passwordStrength.label || '—'}
+                  </span>
+                </span>
+                <span>{nuevoUsuarioForm.clave.length} caracteres</span>
+              </div>
+              <div className="h-1.5 rounded-full bg-slate-100 mt-1 overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-200 ${passwordStrength.barColor}`}
+                  style={{ width: passwordStrength.width }}
+                />
+              </div>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">Debe incluir letras y números.</p>
           </div>
 
           <div>
@@ -3917,28 +4596,52 @@ export default function AdminDashboard({ activeSection = 'usuarios' }: AdminDash
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Nombre Completo <span className="text-gray-500 text-xs">(opcional)</span>
+              Nombre Completo *
             </label>
             <input
+              id="modal-nuevo-usuario-nombre"
               type="text"
               value={nuevoUsuarioForm.nombre_completo}
-              onChange={(e) => setNuevoUsuarioForm({ ...nuevoUsuarioForm, nombre_completo: e.target.value })}
+              onChange={(e) => {
+                const value = e.target.value.replace(/[^A-Za-zÁÉÍÓÚáéíóúÑñ\s]/g, '');
+                setNuevoUsuarioForm({ ...nuevoUsuarioForm, nombre_completo: value });
+                if (nuevoUsuarioErrores.nombre_completo) {
+                  setNuevoUsuarioErrores((prev) => ({ ...prev, nombre_completo: '' }));
+                }
+              }}
               placeholder="Ej: Juan Pérez González"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
+                nuevoUsuarioErrores.nombre_completo ? 'border-rose-400' : 'border-gray-300'
+              }`}
             />
+            {nuevoUsuarioErrores.nombre_completo && (
+              <p className="text-xs text-rose-600 mt-1">{nuevoUsuarioErrores.nombre_completo}</p>
+            )}
           </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              RUT <span className="text-gray-500 text-xs">(opcional)</span>
+              RUT *
             </label>
             <input
+              id="modal-nuevo-usuario-rut"
               type="text"
               value={nuevoUsuarioForm.rut}
-              onChange={(e) => setNuevoUsuarioForm({ ...nuevoUsuarioForm, rut: e.target.value })}
+              onChange={(e) => {
+                const formatted = formatRutValue(e.target.value);
+                setNuevoUsuarioForm({ ...nuevoUsuarioForm, rut: formatted });
+                if (nuevoUsuarioErrores.rut) {
+                  setNuevoUsuarioErrores((prev) => ({ ...prev, rut: '' }));
+                }
+              }}
               placeholder="Ej: 12.345.678-9"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
+                nuevoUsuarioErrores.rut ? 'border-rose-400' : 'border-gray-300'
+              }`}
             />
+            {nuevoUsuarioErrores.rut && (
+              <p className="text-xs text-rose-600 mt-1">{nuevoUsuarioErrores.rut}</p>
+            )}
           </div>
 
           <div>
@@ -3946,25 +4649,49 @@ export default function AdminDashboard({ activeSection = 'usuarios' }: AdminDash
               Teléfono / Contacto <span className="text-gray-500 text-xs">(opcional)</span>
             </label>
             <input
+              id="modal-nuevo-usuario-telefono"
               type="tel"
-              value={nuevoUsuarioForm.telefono}
-              onChange={(e) => setNuevoUsuarioForm({ ...nuevoUsuarioForm, telefono: e.target.value })}
-              placeholder="Ej: +56 9 1234 5678"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              value={nuevoUsuarioForm.telefono || '+569 '}
+              onChange={(e) => {
+                const formatted = e.target.value ? formatTelefonoValue(e.target.value) : '';
+                setNuevoUsuarioForm({ ...nuevoUsuarioForm, telefono: formatted });
+                if (nuevoUsuarioErrores.telefono) {
+                  setNuevoUsuarioErrores((prev) => ({ ...prev, telefono: '' }));
+                }
+              }}
+              placeholder="Ej: +569 1234 5678"
+              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
+                nuevoUsuarioErrores.telefono ? 'border-rose-400' : 'border-gray-300'
+              }`}
             />
+            {nuevoUsuarioErrores.telefono && (
+              <p className="text-xs text-rose-600 mt-1">{nuevoUsuarioErrores.telefono}</p>
+            )}
           </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Correo Electrónico <span className="text-gray-500 text-xs">(opcional)</span>
+              Correo Electrónico *
             </label>
             <input
+              id="modal-nuevo-usuario-correo"
               type="email"
               value={nuevoUsuarioForm.correo}
-              onChange={(e) => setNuevoUsuarioForm({ ...nuevoUsuarioForm, correo: e.target.value })}
+              onChange={(e) => {
+                const value = e.target.value.replace(/\s/g, '');
+                setNuevoUsuarioForm({ ...nuevoUsuarioForm, correo: value });
+                if (nuevoUsuarioErrores.correo) {
+                  setNuevoUsuarioErrores((prev) => ({ ...prev, correo: '' }));
+                }
+              }}
               placeholder="Ej: usuario@empresa.com"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
+                nuevoUsuarioErrores.correo ? 'border-rose-400' : 'border-gray-300'
+              }`}
             />
+            {nuevoUsuarioErrores.correo && (
+              <p className="text-xs text-rose-600 mt-1">{nuevoUsuarioErrores.correo}</p>
+            )}
           </div>
 
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">

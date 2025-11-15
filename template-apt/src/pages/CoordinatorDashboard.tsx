@@ -567,6 +567,7 @@ const workOrdersCounts = {
       await loadSolicitudes();
       await loadWorkOrders();
       await loadSolicitudesHistoricas();
+      await loadAgenda();
       
       setTimeout(() => setSuccess(''), 3000);
       
@@ -595,6 +596,7 @@ const workOrdersCounts = {
       await loadSolicitudes();
       await loadWorkOrders();
       await loadSolicitudesHistoricas();
+      await loadAgenda();
       setSuccess('Solicitud rechazada.');
       setTimeout(() => setSuccess(''), 3000);
     } catch (error: any) {
@@ -627,10 +629,6 @@ const workOrdersCounts = {
     try {
       setLoading(true);
 
-      const estadosFilter = ESTADOS_AGENDA_PERMITIDOS.map(
-        (estado) => `estado_solicitud.eq.${estado}`
-      ).join(',');
-
       const [
         { data: solicitudesDb, error: solicitudesError },
         { data: empleadosDb, error: empleadosError },
@@ -642,7 +640,7 @@ const workOrdersCounts = {
           .select(
             'id_solicitud_diagnostico, fecha_confirmada, fecha_solicitada, bloque_horario_confirmado, bloque_horario, tipo_problema, prioridad, estado_solicitud, empleado_id, vehiculo_id, orden_trabajo_id'
           )
-          .or(estadosFilter || 'estado_solicitud.eq.confirmada')
+          .in('estado_solicitud', ESTADOS_AGENDA_PERMITIDOS)
           .order('fecha_confirmada', { ascending: true }),
               supabase.from('empleado').select('id_empleado, nombre, apellido_paterno'),
               supabase.from('vehiculo').select('id_vehiculo, patente_vehiculo'),

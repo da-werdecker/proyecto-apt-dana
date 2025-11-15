@@ -96,6 +96,7 @@ function AppContent() {
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/admin-usuarios" element={<AdminDashboard activeSection="usuarios" />} />
               <Route path="/admin-vehiculos" element={<AdminDashboard activeSection="vehiculos" />} />
+              <Route path="/admin-ordenes" element={<AdminDashboard activeSection="ordenes" />} />
               <Route path="/admin-roles" element={<AdminDashboard activeSection="roles" />} />
               <Route path="/admin-catalogos" element={<AdminDashboard activeSection="catalogos" />} />
               <Route path="/admin-agenda" element={<AdminDashboard activeSection="agenda" />} />
@@ -103,9 +104,7 @@ function AppContent() {
               <Route path="/admin-auditoria" element={<AdminDashboard activeSection="auditoria" />} />
               <Route path="/gate-ingreso" element={<Gate activeSection="ingreso" />} />
               <Route path="/gate-salida" element={<Gate activeSection="salida" />} />
-              <Route path="/gate-sin-cita" element={<Gate activeSection="sin-cita" />} />
               <Route path="/gate-historial" element={<Gate activeSection="historial" />} />
-              <Route path="/gate-consulta" element={<Gate activeSection="consulta" />} />
               <Route path="/work-orders" element={<WorkOrders />} />
               <Route path="/keys" element={<Keys />} />
             <Route path="/incidents" element={<Incidents />} />
@@ -125,12 +124,11 @@ function AppContent() {
             <Route path="/supervisor-tablero" element={<SupervisorDashboard activeSection="tablero" />} />
             <Route path="/supervisor-diagnosticos" element={<SupervisorDashboard activeSection="diagnosticos" />} />
             <Route path="/supervisor-emergencias" element={<SupervisorDashboard activeSection="emergencias" />} />
-            <Route path="/supervisor-calidad" element={<SupervisorDashboard activeSection="calidad" />} />
             <Route path="/supervisor-indicadores" element={<SupervisorDashboard activeSection="indicadores" />} />
             <Route path="/mechanic-dashboard" element={<MechanicDashboard activeSection="overview" />} />
-            <Route path="/mechanic-assigned" element={<MechanicDashboard activeSection="assigned" />} />
-            <Route path="/mechanic-progress" element={<MechanicDashboard activeSection="progress" />} />
-            <Route path="/mechanic-history" element={<MechanicDashboard activeSection="history" />} />
+            <Route path="/mechanic-ots" element={<MechanicDashboard activeSection="ot-progress" initialCombinedTab="ordenes" />} />
+            <Route path="/mechanic-assigned" element={<MechanicDashboard activeSection="assigned" initialCombinedTab="ordenes" />} />
+            <Route path="/mechanic-progress" element={<MechanicDashboard activeSection="progress" initialCombinedTab="registro" />} />
             <Route path="/vehiculo/:patente" element={<VehicleQRView />} />
             <Route path="*" element={<Navigate to={getInitialRoute()} replace />} />
             </Routes>

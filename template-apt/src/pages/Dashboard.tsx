@@ -42,10 +42,9 @@ export default function Dashboard() {
   }, [user, useLocalMocks]);
 
   useEffect(() => {
-    if (user?.rol !== 'driver' || !useLocalMocks) {
+    if (user?.rol !== 'driver') {
       return;
     }
-
     const handler = (event: Event) => {
       const custom = event as CustomEvent<{ key?: string }>;
       const key = custom.detail?.key;
@@ -56,7 +55,7 @@ export default function Dashboard() {
 
     window.addEventListener('apt-local-update', handler as EventListener);
     return () => window.removeEventListener('apt-local-update', handler as EventListener);
-  }, [user]);
+  }, [user, useLocalMocks]);
 
   const readLocal = (key: string, fallback: any) => {
     if (!useLocalMocks) {
@@ -70,17 +69,33 @@ export default function Dashboard() {
     }
   };
 
+  const DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
   const normalizeDate = (value: any): string | null => {
     if (!value) return null;
+    if (typeof value === 'string' && DATE_ONLY_REGEX.test(value)) {
+      return value; // mantener fecha sin zona horaria
+    }
     const date = value instanceof Date ? value : new Date(value);
     if (isNaN(date.getTime())) return null;
     return date.toISOString();
   };
 
+  const parseDateValue = (value?: any): Date | null => {
+    if (!value) return null;
+    if (typeof value === 'string' && DATE_ONLY_REGEX.test(value)) {
+      return new Date(`${value}T00:00:00`);
+    }
+    const date = value instanceof Date ? value : new Date(value);
+    if (isNaN(date.getTime())) return null;
+    return date;
+  };
+
   const formatDate = (value?: any) => {
     const iso = normalizeDate(value);
     if (!iso) return 'N/A';
-    const date = new Date(iso);
+    const date = parseDateValue(iso);
+    if (!date) return 'N/A';
     return date.toLocaleDateString('es-CL', {
       day: '2-digit',
       month: 'long',
@@ -91,9 +106,14 @@ export default function Dashboard() {
   const formatDateTime = (value?: any) => {
     const iso = normalizeDate(value);
     if (!iso) return null;
-    const date = new Date(iso);
+    const date = parseDateValue(iso);
+    if (!date) return null;
     return (
-      date.toLocaleDateString('es-CL', { day: '2-digit', month: 'short', year: 'numeric' }) +
+      date.toLocaleDateString('es-CL', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+      }) +
       ' ' +
       date.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })
     );
@@ -354,8 +374,7 @@ export default function Dashboard() {
           !history.some(
             (h) =>
               h.id === solicitudId ||
-              h.solicitud_diagnostico_id === solicitudId ||
-              h.patente === solicitud.patente_vehiculo
+              h.solicitud_diagnostico_id === solicitudId
           ) &&
           (!empleadoId || solicitud.empleado_id === empleadoId)
         );

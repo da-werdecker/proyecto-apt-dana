@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { CheckCircle, Clock, Calendar, Truck, AlertCircle, FileText, BarChart3, Settings, Activity, CheckSquare } from 'lucide-react';
+import { CheckCircle, Clock, Calendar, Truck, AlertCircle, FileText, BarChart3, Settings, Activity } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../components/ToastProvider';
 
 interface SupervisorDashboardProps {
-  activeSection?: 'tablero' | 'diagnosticos' | 'emergencias' | 'calidad' | 'indicadores';
+  activeSection?: 'tablero' | 'diagnosticos' | 'emergencias' | 'indicadores';
 }
 
 export default function SupervisorDashboard({ activeSection = 'tablero' }: SupervisorDashboardProps) {
@@ -24,6 +25,7 @@ export default function SupervisorDashboard({ activeSection = 'tablero' }: Super
 
   const { user } = useAuth();
   const hasEnv = Boolean(import.meta.env.VITE_SUPABASE_URL) && Boolean(import.meta.env.VITE_SUPABASE_ANON_KEY);
+  const { showToast } = useToast();
 
   const readLocal = (key: string, fallback: any) => {
     try {
@@ -238,7 +240,10 @@ export default function SupervisorDashboard({ activeSection = 'tablero' }: Super
 
   const handleApproveAssignment = async (asignacion: any) => {
     if (!hasEnv) {
-      alert('No es posible aprobar asignaciones sin conexión a la base de datos.');
+      showToast({
+        type: 'error',
+        message: 'No es posible aprobar asignaciones sin conexión a la base de datos.',
+      });
       return;
     }
 
@@ -258,17 +263,26 @@ export default function SupervisorDashboard({ activeSection = 'tablero' }: Super
         throw error;
       }
 
-      alert('✅ Asignación aprobada');
+      showToast({
+        type: 'success',
+        message: 'Asignación aprobada correctamente.',
+      });
       await loadDiagnosticos();
     } catch (err) {
       console.error('Error aprobando asignación:', err);
-      alert('No se pudo aprobar la asignación. Revisa la consola.');
+      showToast({
+        type: 'error',
+        message: 'No se pudo aprobar la asignación. Revisa la consola.',
+      });
     }
   };
 
   const handleRejectAssignment = async (asignacion: any) => {
     if (!hasEnv) {
-      alert('No es posible rechazar asignaciones sin conexión a la base de datos.');
+      showToast({
+        type: 'error',
+        message: 'No es posible rechazar asignaciones sin conexión a la base de datos.',
+      });
       return;
     }
 
@@ -306,18 +320,25 @@ export default function SupervisorDashboard({ activeSection = 'tablero' }: Super
         }
       }
 
-      alert('Asignación rechazada.');
+      showToast({
+        type: 'success',
+        message: 'Asignación rechazada.',
+      });
       await loadDiagnosticos();
     } catch (err) {
       console.error('Error rechazando asignación:', err);
-      alert('No se pudo rechazar la asignación. Revisa la consola.');
+      showToast({
+        type: 'error',
+        message: 'No se pudo rechazar la asignación. Revisa la consola.',
+      });
     }
   };
 
   const formatDate = (dateStr: string) => {
     if (!dateStr) return 'N/A';
     try {
-      const date = new Date(dateStr);
+      const date =
+        /^\d{4}-\d{2}-\d{2}$/.test(dateStr) ? new Date(`${dateStr}T00:00:00`) : new Date(dateStr);
       return date.toLocaleDateString('es-ES');
     } catch {
       return 'N/A';
@@ -819,21 +840,6 @@ export default function SupervisorDashboard({ activeSection = 'tablero' }: Super
         </div>
       )}
 
-      {/* Contenido de Calidad Técnica */}
-      {activeSection === 'calidad' && (
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Calidad Técnica</h1>
-          <p className="text-gray-600 mb-6">Revisar checklists finales, retrabajos, devoluciones de vehículos.</p>
-          
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-8 text-center">
-            <CheckSquare className="mx-auto text-blue-400 mb-4" size={48} />
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Funcionalidad en desarrollo</h3>
-            <p className="text-gray-600">
-              Aquí podrás revisar la calidad técnica de los trabajos realizados.
-            </p>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

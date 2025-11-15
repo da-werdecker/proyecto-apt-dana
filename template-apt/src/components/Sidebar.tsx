@@ -34,6 +34,7 @@ export default function Sidebar({ currentPage, onNavigate, isOpen = true, onClos
   const adminSubmenuItems = [
     { id: 'admin-usuarios', label: 'Usuarios', icon: Users },
     { id: 'admin-vehiculos', label: 'Gestión de Vehículos', icon: Truck },
+    { id: 'admin-ordenes', label: 'Órdenes de Trabajo', icon: FileText },
     { id: 'admin-roles', label: 'Roles y Permisos', icon: Shield },
     { id: 'admin-catalogos', label: 'Catálogos del Taller', icon: ClipboardList },
     { id: 'admin-agenda', label: 'Configuración de Agenda', icon: Calendar },
@@ -44,9 +45,7 @@ export default function Sidebar({ currentPage, onNavigate, isOpen = true, onClos
   const gateSubmenuItems = [
     { id: 'gate-ingreso', label: 'Ingreso de Vehículos', icon: Truck },
     { id: 'gate-salida', label: 'Salida de Vehículos', icon: Truck },
-    { id: 'gate-sin-cita', label: 'Ingresos sin Cita', icon: AlertCircle },
     { id: 'gate-historial', label: 'Historial del Día', icon: Calendar },
-    { id: 'gate-consulta', label: 'Consulta Rápida', icon: FileText },
   ];
 
   const coordinatorSubmenuItems = [
@@ -71,16 +70,13 @@ export default function Sidebar({ currentPage, onNavigate, isOpen = true, onClos
     { id: 'supervisor-tablero', label: 'Tablero de OT', icon: FileText },
     { id: 'supervisor-diagnosticos', label: 'Aprobación de Asignaciones', icon: CheckCircle },
     { id: 'supervisor-emergencias', label: 'Emergencias en Ruta', icon: AlertCircle },
-    { id: 'supervisor-calidad', label: 'Calidad Técnica', icon: CheckSquare },
     { id: 'supervisor-indicadores', label: 'Indicadores y Productividad', icon: BarChart3 },
   ];
 
-  const mechanicSubmenuItems = [
-    { id: 'mechanic-dashboard', label: 'Mi Tablero', icon: Gauge },
-    { id: 'mechanic-assigned', label: 'Mis OT Asignadas', icon: FileText },
-    { id: 'mechanic-progress', label: 'Registro de Avances', icon: Settings },
-    { id: 'mechanic-history', label: 'Historial de Trabajos', icon: Calendar },
-  ];
+const mechanicSubmenuItems = [
+  { id: 'mechanic-dashboard', label: 'Mi Tablero', icon: Gauge },
+  { id: 'mechanic-ots', label: 'OT´s y Registro de Avances', icon: FileText },
+];
 
   const visibleItems = menuItems.filter(item =>
     user && item.roles.includes(user.rol)

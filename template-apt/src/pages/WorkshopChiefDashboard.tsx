@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import Modal from '../components/Modal';
 import ChecklistDiagnostico from '../components/ChecklistDiagnostico';
+import { useToast } from '../components/ToastProvider';
 
 const PRIORIDADES_OT = [
   { value: 'normal', label: 'Normal', color: 'bg-blue-100 text-blue-800' },
@@ -17,6 +18,7 @@ interface WorkshopChiefDashboardProps {
 
 export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: WorkshopChiefDashboardProps) {
   const { user } = useAuth();
+  const { showToast } = useToast();
   const [diagnosticosDelDia, setDiagnosticosDelDia] = useState<any[]>([]);
   const [diagnosticosProximos, setDiagnosticosProximos] = useState<any[]>([]);
   const [diagnosticosVencidos, setDiagnosticosVencidos] = useState<any[]>([]);
@@ -156,7 +158,8 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
       const hoyMs = hoyDate.getTime();
       const normalizarFechaLocal = (fecha: string | null | undefined) => {
         if (!fecha) return null;
-        const date = new Date(fecha);
+        const date =
+          /^\d{4}-\d{2}-\d{2}$/.test(fecha) ? new Date(`${fecha}T00:00:00`) : new Date(fecha);
         if (isNaN(date.getTime())) return null;
         const local = new Date(date.getFullYear(), date.getMonth(), date.getDate());
         return local.getTime();
@@ -786,22 +789,34 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
     if (!selectedOT || modalReadOnly) return;
 
     if (!formData.mecanico_principal_id) {
-      alert('Debes seleccionar un mecánico principal antes de guardar la orden de trabajo.');
+      showToast({
+        type: 'warning',
+        message: 'Debes seleccionar un mecánico principal antes de guardar la orden de trabajo.',
+      });
       return;
     }
 
     if (mechanicOptions.length === 0) {
-      alert('No hay mecánicos registrados. Registra al menos uno para poder asignarlo.');
+      showToast({
+        type: 'warning',
+        message: 'No hay mecánicos registrados. Registra al menos uno para poder asignarlo.',
+      });
       return;
     }
 
     if (!formData.fecha_programada_reparacion || !formData.hora_programada_reparacion) {
-      alert('Debes agendar la fecha y hora de la reparación antes de guardar.');
+      showToast({
+        type: 'warning',
+        message: 'Debes agendar la fecha y hora de la reparación antes de guardar.',
+      });
       return;
     }
 
     if (!hasEnv) {
-      alert('Configura Supabase para poder guardar la orden de trabajo.');
+      showToast({
+        type: 'error',
+        message: 'Configura Supabase para poder guardar la orden de trabajo.',
+      });
       return;
     }
 
@@ -889,12 +904,18 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
         console.warn('⚠️ No se pudo registrar la notificación para el chofer:', notifyError);
       }
 
-      alert('✅ Orden de trabajo actualizada exitosamente');
+      showToast({
+        type: 'success',
+        message: 'Orden de trabajo actualizada exitosamente.',
+      });
       setModalOpen(false);
       loadData();
     } catch (error) {
       console.error('Error saving OT:', error);
-      alert('Error al guardar la orden de trabajo');
+      showToast({
+        type: 'error',
+        message: 'Error al guardar la orden de trabajo. Revisa la consola para más detalles.',
+      });
     }
   };
 
@@ -909,7 +930,10 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
     if (!selectedOT) return;
 
     if (!hasEnv) {
-      alert('No es posible guardar el checklist sin conexión a la base de datos.');
+      showToast({
+        type: 'error',
+        message: 'No es posible guardar el checklist sin conexión a la base de datos.',
+      });
       return;
     }
 
@@ -960,10 +984,16 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
       }
 
       setShowChecklist(false);
-      alert('Checklist guardado exitosamente.');
+      showToast({
+        type: 'success',
+        message: 'Checklist guardado exitosamente.',
+      });
     } catch (error) {
       console.error('Error guardando checklist:', error);
-      alert('No se pudo guardar el checklist de diagnóstico.');
+      showToast({
+        type: 'error',
+        message: 'No se pudo guardar el checklist de diagnóstico. Revisa la consola para más detalles.',
+      });
     }
   };
 
@@ -979,7 +1009,10 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
   const formatDate = (dateStr: string) => {
     if (!dateStr) return 'N/A';
     try {
-      const date = new Date(dateStr);
+      const date =
+        dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)
+          ? new Date(`${dateStr}T00:00:00`)
+          : new Date(dateStr);
       if (isNaN(date.getTime())) return 'N/A';
       
       const days = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
@@ -1205,7 +1238,10 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
     if (!ordenId) return;
 
     if (!hasEnv) {
-      alert('Configura la conexión a Supabase para cerrar una OT.');
+      showToast({
+        type: 'error',
+        message: 'Configura la conexión a Supabase para cerrar una OT.',
+      });
       return;
     }
 
@@ -1227,10 +1263,16 @@ export default function WorkshopChiefDashboard({ activeSection = 'agenda' }: Wor
 
       await loadData();
       setCierreTab('finalizadas');
-      alert('✅ Orden de trabajo cerrada correctamente.');
+      showToast({
+        type: 'success',
+        message: 'Orden de trabajo cerrada correctamente.',
+      });
     } catch (err) {
       console.error('Error cerrando OT:', err);
-      alert('No se pudo cerrar la OT. Revisa la consola para más detalles.');
+      showToast({
+        type: 'error',
+        message: 'No se pudo cerrar la OT. Revisa la consola para más detalles.',
+      });
     } finally {
       setClosingOtId(null);
     }

@@ -1904,221 +1904,302 @@ export default function Gate({ activeSection = 'ingreso' }: GateProps) {
       {/* Contenido de Ingreso de Vehículos */}
       {activeSection === 'ingreso' && (
         <div className="space-y-6">
-          <div className="bg-white rounded-lg shadow p-6">
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">Ingreso de Vehículos</h1>
-            <p className="text-gray-600 mb-6">Escáner QR / búsqueda por patente, registro de fecha/hora, chofer, motivo de ingreso.</p>
-            
-            <h2 className="text-lg font-semibold mb-4 text-gray-900">Buscar Vehículo por Patente</h2>
-            <div className="space-y-4">
-            <div className="flex gap-3">
-              <input
-                type="text"
-                value={searchPatente}
-                onChange={(e) => setSearchPatente(e.target.value)}
-                placeholder="Ingrese la patente del vehículo"
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-lg"
-                onKeyPress={(e) => e.key === 'Enter' && searchVehicle()}
-              />
-              <button
-                onClick={searchVehicle}
-                disabled={searching}
-                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-              >
-                {searching ? 'Buscando...' : 'Buscar'}
-              </button>
-              <button
-                onClick={qrScannerActive ? stopQRScanner : startQRScanner}
-                className={`px-6 py-2 rounded-lg font-medium transition-colors ${
-                  qrScannerActive
-                    ? 'bg-red-600 text-white hover:bg-red-700'
-                    : 'bg-green-600 text-white hover:bg-green-700'
-                }`}
-              >
-                {qrScannerActive ? 'Detener Escáner' : 'Escanear QR'}
-              </button>
-            </div>
-
-            {/* Selector de cámara para QR (solo mostrar si NO está escaneando) */}
-            {!qrScannerActive && availableCamerasQR.length > 1 && (
-              <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  📷 Seleccionar Cámara para Escáner QR
-                </label>
-                <select
-                  value={selectedCameraIdQR}
-                  onChange={(e) => setSelectedCameraIdQR(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                >
-                  {availableCamerasQR.map((camera: any) => (
-                    <option key={camera.id} value={camera.id}>
-                      {camera.label || `Cámara ${camera.id}`}
-                      {camera.label?.toLowerCase().includes('ivcam') ? ' 📱 (iVCam - Celular)' : ''}
-                    </option>
-                  ))}
-                </select>
-                <p className="text-xs text-gray-600 mt-2">
-                  {availableCamerasQR.find((c: any) => c.id === selectedCameraIdQR)?.label?.toLowerCase().includes('ivcam')
-                    ? '✅ Usando cámara de tu celular (iVCam)'
-                    : '💡 Selecciona "iVCam" para usar la cámara de tu celular'}
+          <div className="rounded-3xl bg-gradient-to-br from-blue-600 via-blue-500 to-indigo-500 text-white shadow-xl shadow-blue-200/70">
+            <div className="p-6 md:p-8 flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+              <div className="space-y-3">
+                <p className="text-xs uppercase tracking-[0.4em] text-white/70">Flujo guiado</p>
+                <h1 className="text-3xl font-bold">Ingreso de Vehículos</h1>
+                <p className="text-white/85 max-w-2xl">
+                  Escanea el QR o escribe la patente, verifica los datos y autoriza el acceso en menos de un minuto.
                 </p>
               </div>
-            )}
-
-            {/* Mostrar información de cámaras detectadas */}
-            {!qrScannerActive && availableCamerasQR.length > 0 && (
-              <div className="mt-2 p-2 bg-gray-100 rounded-lg">
-                <p className="text-xs text-gray-600">
-                  <strong>Cámaras detectadas:</strong> {availableCamerasQR.length}
-                  {availableCamerasQR.some((c: any) => c.label?.toLowerCase().includes('ivcam')) && (
-                    <span className="text-green-600 ml-2">✓ iVCam detectada</span>
-                  )}
-                </p>
-              </div>
-            )}
-
-            {/* Área del escáner QR */}
-            {showQRScanner && (
-              <div className="mt-4">
-                <div className="relative">
-                  <div 
-                    id="qr-reader" 
-                    className="w-full max-w-md mx-auto rounded-lg overflow-hidden border-2 border-blue-500"
-                    style={{ minHeight: '300px' }}
-                  ></div>
-                  <p className="text-sm text-gray-600 mt-2 text-center">
-                    Apunta la cámara hacia el código QR del vehículo
-                  </p>
-                  {!qrScannerActive && (
-                    <p className="text-xs text-blue-600 mt-2 text-center">
-                      Iniciando escáner...
-                    </p>
-                  )}
+              <div className="grid grid-cols-2 gap-3 w-full max-w-sm">
+                <div className="bg-white/15 rounded-2xl p-4 backdrop-blur">
+                  <p className="text-xs uppercase tracking-wide text-white/70">Autorizados hoy</p>
+                  <p className="text-2xl font-bold">{historialAutorizados.filter((registro) => {
+                    const fecha = new Date(registro.fecha_busqueda);
+                    const hoy = new Date();
+                    return (
+                      fecha.getDate() === hoy.getDate() &&
+                      fecha.getMonth() === hoy.getMonth() &&
+                      fecha.getFullYear() === hoy.getFullYear()
+                    );
+                  }).length}</p>
+                </div>
+                <div className="bg-white/15 rounded-2xl p-4 backdrop-blur">
+                  <p className="text-xs uppercase tracking-wide text-white/70">Vehículos registrados</p>
+                  <p className="text-2xl font-bold">{vehicles.length}</p>
                 </div>
               </div>
-            )}
-            
-            {/* Opción alternativa: Usar página dedicada de escáner */}
-            <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
-              <p className="text-sm text-blue-800 mb-2">
-                💡 <strong>¿Prefieres usar el escáner en pantalla completa?</strong>
-              </p>
-              <button
-                onClick={() => navigate('/gate-qr-scanner')}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
-              >
-                Abrir Escáner QR (Pantalla Completa)
-              </button>
             </div>
+            <div className="border-t border-white/20 px-6 md:px-8 py-5">
+              <div className="grid gap-3 md:grid-cols-3">
+                {[
+                  {
+                    title: 'Escanea o escribe',
+                    desc: 'Captura la patente con QR o teclea manualmente.',
+                    icon: '📷',
+                  },
+                  {
+                    title: 'Verifica datos',
+                    desc: 'Revisa marca, modelo y citas programadas.',
+                    icon: '🧾',
+                  },
+                  {
+                    title: 'Autoriza ingreso',
+                    desc: 'Registra observaciones y confirma el acceso.',
+                    icon: '✅',
+                  },
+                ].map((step) => (
+                  <div key={step.title} className="bg-white/15 rounded-2xl p-4 backdrop-blur-sm flex gap-3">
+                    <span className="text-2xl">{step.icon}</span>
+                    <div>
+                      <p className="font-semibold text-white">{step.title}</p>
+                      <p className="text-sm text-white/80">{step.desc}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
 
-            {foundVehicle && (
-              <div className="mt-6 p-6 bg-green-50 border-2 border-green-500 rounded-lg">
-                <div className="flex items-start gap-4">
-                  <div className="flex-shrink-0">
-                    <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center">
+          <div className="grid gap-6 lg:grid-cols-3">
+            <div className="space-y-6 lg:col-span-2">
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+                <div className="flex flex-col gap-2 mb-6 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <h2 className="text-xl font-semibold text-slate-900">Panel de búsqueda y escaneo</h2>
+                    <p className="text-sm text-slate-500">
+                      Introduce la patente o activa el lector QR. El sistema te mostrará el detalle del vehículo automáticamente.
+                    </p>
+                  </div>
+                  <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-1 text-xs font-semibold text-slate-600">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    Escáner {qrScannerActive ? 'activo' : 'disponible'}
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="flex flex-col gap-3 lg:flex-row">
+                    <div className="flex-1 relative">
+                      <span className="absolute inset-y-0 left-3 flex items-center text-slate-400">🚗</span>
+                      <input
+                        id="patente-search"
+                        type="text"
+                        value={searchPatente}
+                        onChange={(e) => setSearchPatente(e.target.value)}
+                        placeholder="Ingresa la patente · Ej: BDKJ34"
+                        className="w-full rounded-xl border border-slate-200 pl-10 pr-4 py-3 text-lg font-semibold tracking-wide uppercase shadow-inner focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        onKeyPress={(e) => e.key === 'Enter' && searchVehicle()}
+                      />
+                    </div>
+                    <button
+                      onClick={searchVehicle}
+                      disabled={searching}
+                      className="px-6 py-3 rounded-xl bg-blue-600 text-white font-semibold shadow hover:bg-blue-700 transition disabled:opacity-50"
+                    >
+                      {searching ? 'Buscando...' : 'Buscar'}
+                    </button>
+                    <button
+                      onClick={qrScannerActive ? stopQRScanner : startQRScanner}
+                      className={`px-6 py-3 rounded-xl font-semibold shadow transition ${
+                        qrScannerActive ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-emerald-600 text-white hover:bg-emerald-700'
+                      }`}
+                    >
+                      {qrScannerActive ? 'Detener escáner' : 'Escanear QR'}
+                    </button>
+                  </div>
+
+                  {!qrScannerActive && availableCamerasQR.length > 1 && (
+                    <div className="p-4 rounded-2xl bg-blue-50 border border-blue-100">
+                      <label className="block text-sm font-medium text-blue-900 mb-2">
+                        📷 Selecciona la cámara que usarás
+                      </label>
+                      <select
+                        value={selectedCameraIdQR}
+                        onChange={(e) => setSelectedCameraIdQR(e.target.value)}
+                        className="w-full px-4 py-2 border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                      >
+                        {availableCamerasQR.map((camera: any) => (
+                          <option key={camera.id} value={camera.id}>
+                            {camera.label || `Cámara ${camera.id}`}
+                            {camera.label?.toLowerCase().includes('ivcam') ? ' 📱 (iVCam - Celular)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-xs text-blue-700 mt-2">
+                        {availableCamerasQR.find((c: any) => c.id === selectedCameraIdQR)?.label?.toLowerCase().includes('ivcam')
+                          ? '✅ Usando la cámara del celular vía iVCam'
+                          : '💡 Elige "iVCam" si quieres usar tu celular como cámara.'}
+                      </p>
+                    </div>
+                  )}
+
+                  {!qrScannerActive && availableCamerasQR.length > 0 && (
+                    <div className="flex items-center gap-2 text-xs text-slate-500">
+                      <span className="font-semibold">{availableCamerasQR.length}</span> dispositivos detectados
+                      {availableCamerasQR.some((c: any) => c.label?.toLowerCase().includes('ivcam')) && (
+                        <span className="text-emerald-600 font-semibold">· iVCam listo</span>
+                      )}
+                    </div>
+                  )}
+
+                  {showQRScanner && (
+                    <div className="rounded-2xl border-2 border-dashed border-blue-300 bg-blue-50/40 p-4">
+                      <div 
+                        id="qr-reader" 
+                        className="w-full max-w-xl mx-auto rounded-xl overflow-hidden border border-blue-400 shadow-inner"
+                        style={{ minHeight: '320px' }}
+                      ></div>
+                      <p className="text-sm text-blue-900 mt-3 text-center font-medium">
+                        {qrScannerActive ? 'Escaneando...' : 'Iniciando escáner, prepara el código QR.'}
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="rounded-2xl border border-dashed border-blue-200 p-4 bg-blue-50/60">
+                    <p className="text-sm text-blue-900 mb-3 flex items-center gap-2">
+                      💡 <strong>¿Necesitas el lector en pantalla completa?</strong>
+                    </p>
+                    <button
+                      onClick={() => navigate('/gate-qr-scanner')}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-semibold"
+                    >
+                      Abrir Escáner QR (Modo completo)
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {foundVehicle && (
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-6 shadow-sm">
+                  <div className="flex items-start gap-4">
+                    <div className="w-12 h-12 rounded-full bg-emerald-500 flex items-center justify-center shadow-lg">
                       <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                       </svg>
                     </div>
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="text-lg font-bold text-green-800 mb-2">
-                      ✓ ACCESO AUTORIZADO
-                      {diagnosticRequest && (
-                        <span className="ml-2 px-2 py-1 bg-blue-600 text-white text-xs rounded-full">
-                          Hora de diagnóstico confirmada para hoy
-                        </span>
-                      )}
-                    </h3>
-                    <div className="grid grid-cols-2 gap-3 text-sm mb-4">
-                      <div>
-                        <span className="font-medium text-gray-700">Patente:</span>
-                        <p className="text-gray-900">{foundVehicle.patente_vehiculo}</p>
+                    <div className="flex-1 space-y-4">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-xl font-bold text-emerald-900">Acceso autorizado</h3>
+                        {diagnosticRequest && (
+                          <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-600 text-white">
+                            {diagnosticRequest.esParaHoy ? 'Cita para hoy' : 'Cita en otra fecha'}
+                          </span>
+                        )}
                       </div>
-                      <div>
-                        <span className="font-medium text-gray-700">Modelo:</span>
-                        <p className="text-gray-900">
-                          {foundVehicle.modelo?.marca?.nombre_marca} {foundVehicle.modelo?.nombre_modelo}
-                        </p>
-                      </div>
-                      <div>
-                        <span className="font-medium text-gray-700">Tipo:</span>
-                        <p className="text-gray-900">{foundVehicle.tipo?.tipo_vehiculo}</p>
-                      </div>
-                      <div>
-                        <span className="font-medium text-gray-700">Estado:</span>
-                        <p className="text-gray-900">{foundVehicle.estado_vehiculo}</p>
-                      </div>
-                      {foundVehicle.sucursal && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                         <div>
-                          <span className="font-medium text-gray-700">Sucursal:</span>
-                          <p className="text-gray-900">{foundVehicle.sucursal.nombre_sucursal}</p>
+                          <p className="text-slate-500">Patente</p>
+                          <p className="text-lg font-semibold text-slate-900">{foundVehicle.patente_vehiculo}</p>
+                        </div>
+                        <div>
+                          <p className="text-slate-500">Modelo</p>
+                          <p className="text-lg font-semibold text-slate-900">
+                            {foundVehicle.modelo?.marca?.nombre_marca} {foundVehicle.modelo?.nombre_modelo}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-slate-500">Tipo</p>
+                          <p className="text-slate-900 font-semibold">{foundVehicle.tipo?.tipo_vehiculo}</p>
+                        </div>
+                        <div>
+                          <p className="text-slate-500">Sucursal</p>
+                          <p className="text-slate-900 font-semibold">{foundVehicle.sucursal?.nombre_sucursal || 'N/A'}</p>
+                        </div>
+                      </div>
+
+                      {diagnosticRequest && (
+                        <div className={`p-4 rounded-2xl border ${diagnosticRequest.esParaHoy ? 'bg-blue-50 border-blue-200' : 'bg-yellow-50 border-yellow-200'}`}>
+                          <h4 className="font-semibold text-slate-900 mb-2">Detalle de diagnóstico</h4>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                            <div>
+                              <p className="text-slate-500">Problema</p>
+                              <p className="font-semibold text-slate-900">{diagnosticRequest.tipo_problema}</p>
+                            </div>
+                            <div>
+                              <p className="text-slate-500">Horario confirmado</p>
+                              <p className="font-semibold text-slate-900">
+                                {diagnosticRequest.bloque_horario_confirmado || diagnosticRequest.bloque_horario || 'Por confirmar'}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-slate-500">Fecha de la cita</p>
+                              <p className="font-semibold text-slate-900">
+                                {diagnosticRequest.fecha_confirmada
+                                  ? new Date(diagnosticRequest.fecha_confirmada).toLocaleDateString('es-CL', {
+                                      weekday: 'long',
+                                      year: 'numeric',
+                                      month: 'long',
+                                      day: 'numeric',
+                                    })
+                                  : diagnosticRequest.fecha_solicitada
+                                  ? new Date(diagnosticRequest.fecha_solicitada).toLocaleDateString('es-CL', {
+                                      weekday: 'long',
+                                      year: 'numeric',
+                                      month: 'long',
+                                      day: 'numeric',
+                                    })
+                                  : 'N/A'}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-slate-500">Prioridad</p>
+                              <p className="font-semibold text-slate-900 capitalize">{diagnosticRequest.prioridad}</p>
+                            </div>
+                          </div>
+                          {!diagnosticRequest.esParaHoy && (
+                            <div className="mt-3 text-sm text-yellow-800 bg-yellow-100 border border-yellow-300 rounded-lg p-3">
+                              ⚠️ Esta unidad tiene cita en otra fecha. Confirma con el coordinador si corresponde adelantar el ingreso.
+                            </div>
+                          )}
+                          <button
+                            onClick={() => setShowIngresoModal(true)}
+                            className="mt-4 px-5 py-2 rounded-xl font-semibold text-white shadow transition-colors bg-blue-600 hover:bg-blue-700"
+                          >
+                            Registrar ingreso + observaciones
+                          </button>
                         </div>
                       )}
                     </div>
-                    {diagnosticRequest && (
-                      <div className={`mt-4 p-4 border rounded-lg ${diagnosticRequest.esParaHoy ? 'bg-blue-50 border-blue-300' : 'bg-yellow-50 border-yellow-300'}`}>
-                        <h4 className={`font-semibold mb-2 ${diagnosticRequest.esParaHoy ? 'text-blue-900' : 'text-yellow-900'}`}>
-                          Información del Diagnóstico:
-                          {!diagnosticRequest.esParaHoy && (
-                            <span className="ml-2 px-2 py-1 bg-yellow-600 text-white text-xs rounded-full">
-                              Cita para otro día
-                            </span>
-                          )}
-                        </h4>
-                        <div className="grid grid-cols-2 gap-2 text-sm mb-2">
-                          <div>
-                            <span className="font-medium text-gray-700">Problema:</span>
-                            <p className="text-gray-900">{diagnosticRequest.tipo_problema}</p>
-                          </div>
-                          <div>
-                            <span className="font-medium text-gray-700">Horario:</span>
-                            <p className="text-gray-900">{diagnosticRequest.bloque_horario_confirmado || diagnosticRequest.bloque_horario}</p>
-                          </div>
-                          <div>
-                            <span className="font-medium text-gray-700">Fecha de la cita:</span>
-                            <p className="text-gray-900">
-                              {diagnosticRequest.fecha_confirmada 
-                                ? new Date(diagnosticRequest.fecha_confirmada).toLocaleDateString('es-CL', { 
-                                    weekday: 'long', 
-                                    year: 'numeric', 
-                                    month: 'long', 
-                                    day: 'numeric' 
-                                  })
-                                : diagnosticRequest.fecha_solicitada 
-                                  ? new Date(diagnosticRequest.fecha_solicitada).toLocaleDateString('es-CL', { 
-                                      weekday: 'long', 
-                                      year: 'numeric', 
-                                      month: 'long', 
-                                      day: 'numeric' 
-                                    })
-                                  : 'N/A'}
-                            </p>
-                          </div>
-                          <div>
-                            <span className="font-medium text-gray-700">Prioridad:</span>
-                            <p className="text-gray-900 capitalize">{diagnosticRequest.prioridad}</p>
-                          </div>
-                        </div>
-                        {!diagnosticRequest.esParaHoy && (
-                          <div className="mb-3 p-2 bg-yellow-100 border border-yellow-400 rounded text-sm text-yellow-800">
-                            ⚠️ Atención: Esta cita está programada para otro día. Verifica que el chofer esté llegando en la fecha correcta.
-                          </div>
-                        )}
-                        <button
-                          onClick={() => setShowIngresoModal(true)}
-                          className={`mt-3 px-4 py-2 text-white rounded-lg hover:opacity-90 transition-colors ${diagnosticRequest.esParaHoy ? 'bg-blue-600 hover:bg-blue-700' : 'bg-yellow-600 hover:bg-yellow-700'}`}
-                        >
-                          Registrar Ingreso con Observaciones
-                        </button>
-                      </div>
-                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h3 className="text-base font-semibold text-slate-900 mb-3">Checklist rápido</h3>
+                <ul className="space-y-2 text-sm text-slate-600">
+                  {[
+                    'Pide siempre cédula y licencia del chofer.',
+                    'Asegúrate de que el motivo de ingreso coincide con la orden.',
+                    'Confirma el kilometraje reportado cuando corresponda.',
+                    'Agrega observaciones de daños visibles o faltantes.',
+                  ].map((tip) => (
+                    <li key={tip} className="flex gap-2">
+                      <span className="text-emerald-500 mt-0.5">•</span>
+                      <span>{tip}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h3 className="text-base font-semibold text-slate-900 mb-3">Preguntas frecuentes</h3>
+                <div className="space-y-3 text-sm text-slate-600">
+                  <div>
+                    <p className="font-semibold text-slate-800">¿Y si el QR no lee?</p>
+                    <p>Revisa la cámara seleccionada o ingresa manualmente la patente. Puedes abrir el modo pantalla completa.</p>
+                  </div>
+                  <div>
+                    <p className="font-semibold text-slate-800">¿Qué hacer con un ingreso no registrado?</p>
+                    <p>Contacta de inmediato al coordinador. Registra la patente para trazabilidad.</p>
                   </div>
                 </div>
               </div>
-            )}
+            </div>
           </div>
-          </div>
-
           {/* Historial de Vehículos Autorizados */}
           <div className="bg-white rounded-lg shadow p-6">
             <div className="flex items-center justify-between mb-4">
@@ -2235,163 +2316,291 @@ export default function Gate({ activeSection = 'ingreso' }: GateProps) {
       {/* Contenido de Salida de Vehículos */}
       {activeSection === 'salida' && (
         <div className="space-y-6">
-          <div className="bg-white rounded-lg shadow p-6">
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">Salida de Vehículos</h1>
-            <p className="text-gray-600 mb-6">Escáner QR / búsqueda por patente, cierre del movimiento y motivo de salida.</p>
-            
-            <h2 className="text-lg font-semibold mb-4 text-gray-900">Buscar Vehículo por Patente</h2>
-            <div className="space-y-4">
-            <div className="flex gap-3">
-              <input
-                type="text"
-                value={searchPatenteSalida}
-                onChange={(e) => setSearchPatenteSalida(e.target.value)}
-                placeholder="Ingrese la patente del vehículo"
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-lg"
-                onKeyPress={(e) => e.key === 'Enter' && searchVehicleSalida()}
-              />
-              <button
-                onClick={searchVehicleSalida}
-                disabled={searchingSalida}
-                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-              >
-                {searchingSalida ? 'Buscando...' : 'Buscar'}
-              </button>
+          <div className="rounded-3xl bg-gradient-to-br from-sky-600 via-blue-500 to-indigo-500 text-white shadow-xl shadow-blue-200/70">
+            <div className="p-6 md:p-8 flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+              <div className="space-y-3">
+                <p className="text-xs uppercase tracking-[0.4em] text-white/70">Cierre de jornada</p>
+                <h1 className="text-3xl font-bold">Salida de Vehículos</h1>
+                <p className="text-white/85 max-w-2xl">
+                  Revisa la patente, confirma kilometraje y motivo de salida antes de autorizar el egreso.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-3 w-full max-w-sm">
+                <div className="bg-white/15 rounded-2xl p-4 backdrop-blur">
+                  <p className="text-xs uppercase tracking-wide text-white/70">Salidas hoy</p>
+                  <p className="text-2xl font-bold">
+                    {historialSalidas.filter((registro) => {
+                      const fecha = new Date(registro.fecha_salida);
+                      const hoy = new Date();
+                      return (
+                        fecha.getDate() === hoy.getDate() &&
+                        fecha.getMonth() === hoy.getMonth() &&
+                        fecha.getFullYear() === hoy.getFullYear()
+                      );
+                    }).length}
+                  </p>
+                </div>
+                <div className="bg-white/15 rounded-2xl p-4 backdrop-blur">
+                  <p className="text-xs uppercase tracking-wide text-white/70">Vehículos en taller</p>
+                  <p className="text-2xl font-bold">
+                    {Math.max(historialAutorizados.length - historialSalidas.length, 0)}
+                  </p>
+                </div>
+              </div>
             </div>
-
-            <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
-              <p className="text-sm text-blue-800 mb-2">
-                💡 <strong>¿Prefieres usar el escáner en pantalla completa?</strong>
-              </p>
-              <button
-                onClick={() => navigate('/gate-qr-scanner?mode=salida')}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
-              >
-                Abrir Escáner QR (Pantalla Completa)
-              </button>
-            </div>
-
-            {foundVehicleSalida && (
-              <div className="mt-6 p-6 bg-blue-50 border-2 border-blue-500 rounded-lg">
-                <div className="flex items-start gap-4">
-                  <div className="flex-shrink-0">
-                    <div className="w-12 h-12 bg-blue-500 rounded-full flex items-center justify-center">
-                      <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
+            <div className="border-t border-white/20 px-6 md:px-8 py-5">
+              <div className="grid gap-3 md:grid-cols-3">
+                {[
+                  {
+                    title: 'Verifica datos',
+                    desc: 'Confirma patente y orden antes de egresar.',
+                    icon: '🧾',
+                  },
+                  {
+                    title: 'Revisa checklist',
+                    desc: 'Kilometraje, daños y combustible informados.',
+                    icon: '🛠️',
+                  },
+                  {
+                    title: 'Registra salida',
+                    desc: 'Autoriza y deja bitácora de motivo.',
+                    icon: '🚦',
+                  },
+                ].map((step) => (
+                  <div key={step.title} className="bg-white/15 rounded-2xl p-4 backdrop-blur-sm flex gap-3">
+                    <span className="text-2xl">{step.icon}</span>
+                    <div>
+                      <p className="font-semibold text-white">{step.title}</p>
+                      <p className="text-sm text-white/80">{step.desc}</p>
                     </div>
                   </div>
-                  <div className="flex-1">
-                    <h3 className="text-lg font-bold text-blue-800 mb-2">✓ SALIDA AUTORIZADA</h3>
-                    <div className="grid grid-cols-2 gap-3 text-sm">
-                      <div>
-                        <span className="font-medium text-gray-700">Patente:</span>
-                        <p className="text-gray-900">{foundVehicleSalida.patente_vehiculo}</p>
-                      </div>
-                      <div>
-                        <span className="font-medium text-gray-700">Modelo:</span>
-                        <p className="text-gray-900">
-                          {foundVehicleSalida.modelo?.marca?.nombre_marca} {foundVehicleSalida.modelo?.nombre_modelo}
-                        </p>
-                      </div>
-                      <div>
-                        <span className="font-medium text-gray-700">Tipo:</span>
-                        <p className="text-gray-900">{foundVehicleSalida.tipo?.tipo_vehiculo}</p>
-                      </div>
-                      <div>
-                        <span className="font-medium text-gray-700">Estado:</span>
-                        <p className="text-gray-900">{foundVehicleSalida.estado_vehiculo}</p>
-                      </div>
-                      {foundVehicleSalida.sucursal && (
-                        <div>
-                          <span className="font-medium text-gray-700">Sucursal:</span>
-                          <p className="text-gray-900">{foundVehicleSalida.sucursal.nombre_sucursal}</p>
-                        </div>
-                      )}
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-6 lg:grid-cols-3">
+            <div className="space-y-6 lg:col-span-2">
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+                <div className="flex flex-col gap-2 mb-6 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <h2 className="text-xl font-semibold text-slate-900">Panel de búsqueda y escaneo</h2>
+                    <p className="text-sm text-slate-500">
+                      Ingresa la patente o abre el lector QR. Si el vehículo tiene OT abierta, se mostrará al instante.
+                    </p>
+                  </div>
+                  <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-1 text-xs font-semibold text-slate-600">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    Escáner {qrScannerActive ? 'activo' : 'disponible'}
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="flex flex-col gap-3 lg:flex-row">
+                    <div className="flex-1 relative">
+                      <span className="absolute inset-y-0 left-3 flex items-center text-slate-400">🚚</span>
+                      <input
+                        type="text"
+                        value={searchPatenteSalida}
+                        onChange={(e) => setSearchPatenteSalida(e.target.value)}
+                        placeholder="Patente para salida · Ej: KT-ZR-21"
+                        className="w-full rounded-xl border border-slate-200 pl-10 pr-4 py-3 text-lg font-semibold tracking-wide uppercase shadow-inner focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        onKeyPress={(e) => e.key === 'Enter' && searchVehicleSalida()}
+                      />
                     </div>
+                    <button
+                      onClick={searchVehicleSalida}
+                      disabled={searchingSalida}
+                      className="px-6 py-3 rounded-xl bg-blue-600 text-white font-semibold shadow hover:bg-blue-700 transition disabled:opacity-50"
+                    >
+                      {searchingSalida ? 'Buscando...' : 'Buscar'}
+                    </button>
+                    <button
+                      onClick={() => navigate('/gate-qr-scanner?mode=salida')}
+                      className="px-6 py-3 rounded-xl bg-indigo-600 text-white font-semibold shadow hover:bg-indigo-700 transition"
+                    >
+                      Escáner QR
+                    </button>
+                  </div>
+
+                  {!qrScannerActive && availableCamerasQR.length > 1 && (
+                    <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200">
+                      <label className="block text-sm font-medium text-slate-900 mb-2">
+                        📷 Selecciona la cámara que usarás
+                      </label>
+                      <select
+                        value={selectedCameraIdQR}
+                        onChange={(e) => setSelectedCameraIdQR(e.target.value)}
+                        className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                      >
+                        {availableCamerasQR.map((camera: any) => (
+                          <option key={camera.id} value={camera.id}>
+                            {camera.label || `Cámara ${camera.id}`}
+                            {camera.label?.toLowerCase().includes('ivcam') ? ' 📱 (iVCam - Celular)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-xs text-slate-500 mt-2">
+                        {availableCamerasQR.find((c: any) => c.id === selectedCameraIdQR)?.label?.toLowerCase().includes('ivcam')
+                          ? '✅ Usando la cámara del celular vía iVCam'
+                          : '💡 Elige "iVCam" si quieres usar tu celular como cámara.'}
+                      </p>
+                    </div>
+                  )}
+
+                  {foundVehicleSalida && (
+                    <div className="rounded-2xl border border-blue-200 bg-blue-50/70 p-6 shadow-sm">
+                      <div className="flex items-start gap-4">
+                        <div className="w-12 h-12 rounded-full bg-blue-500 flex items-center justify-center shadow-lg">
+                          <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                        </div>
+                        <div className="flex-1 space-y-4">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="text-xl font-bold text-blue-900">Salida autorizada</h3>
+                            <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-white/70 text-blue-900">
+                              Checklist pendiente
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                            <div>
+                              <p className="text-slate-500">Patente</p>
+                              <p className="text-lg font-semibold text-slate-900">{foundVehicleSalida.patente_vehiculo}</p>
+                            </div>
+                            <div>
+                              <p className="text-slate-500">Modelo</p>
+                              <p className="text-lg font-semibold text-slate-900">
+                                {foundVehicleSalida.modelo?.marca?.nombre_marca} {foundVehicleSalida.modelo?.nombre_modelo}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-slate-500">Tipo</p>
+                              <p className="text-slate-900 font-semibold">{foundVehicleSalida.tipo?.tipo_vehiculo}</p>
+                            </div>
+                            <div>
+                              <p className="text-slate-500">Sucursal</p>
+                              <p className="text-slate-900 font-semibold">{foundVehicleSalida.sucursal?.nombre_sucursal || 'N/A'}</p>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                            <div className="bg-white rounded-xl p-3 border border-blue-100">
+                              <p className="text-xs uppercase text-slate-500 tracking-wide">Estado actual</p>
+                              <p className="text-blue-900 font-semibold">{foundVehicleSalida.estado_vehiculo}</p>
+                            </div>
+                            <div className="bg-white rounded-xl p-3 border border-blue-100">
+                          <p className="text-xs uppercase text-slate-500 tracking-wide">Último movimiento</p>
+                          <p className="text-blue-900 font-semibold">
+                            {new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                            </div>
+                            <div className="bg-white rounded-xl p-3 border border-blue-100">
+                              <p className="text-xs uppercase text-slate-500 tracking-wide">Revisión</p>
+                              <p className="text-blue-900 font-semibold">Registrar motivo y combustible</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h3 className="text-base font-semibold text-slate-900 mb-3">Checklist rápido</h3>
+                <ul className="space-y-2 text-sm text-slate-600">
+                  {[
+                    'Confirma el motivo del egreso y quién retira el vehículo.',
+                    'Verifica kilometraje y nivel de combustible entregado.',
+                    'Registra daños o elementos faltantes antes de que salga.',
+                    'Asegúrate de que la OT esté cerrada o con autorización.',
+                  ].map((tip) => (
+                    <li key={tip} className="flex gap-2">
+                      <span className="text-blue-500 mt-0.5">•</span>
+                      <span>{tip}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h3 className="text-base font-semibold text-slate-900 mb-3">Atajos útiles</h3>
+                <div className="space-y-3 text-sm text-slate-600">
+                  <div>
+                    <p className="font-semibold text-slate-800">¿No encuentras la orden?</p>
+                    <p>Revisa la sección de historial o consulta al coordinador para validar la OT antes de liberar la unidad.</p>
+                  </div>
+                  <div>
+                    <p className="font-semibold text-slate-800">¿Salida fuera de horario?</p>
+                    <p>Registra observaciones y adjunta evidencia en Auditoría para trazabilidad.</p>
                   </div>
                 </div>
               </div>
-            )}
             </div>
           </div>
 
           {/* Historial de Salidas */}
-          <div className="bg-white rounded-lg shadow p-6">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-semibold text-gray-900">Historial de Salidas</h2>
-              <span className="text-sm text-gray-500">
+              <div>
+                <h2 className="text-xl font-semibold text-slate-900">Historial de Salidas</h2>
+                <p className="text-sm text-slate-500">Últimos movimientos registrados por portería</p>
+              </div>
+              <span className="text-sm text-slate-500">
                 {historialSalidas.length} registro(s)
               </span>
             </div>
             {historialSalidas.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
+              <div className="text-center py-8 text-slate-500">
                 <p>No hay registros de salidas aún.</p>
                 <p className="text-sm mt-2">Las salidas registradas aparecerán aquí automáticamente.</p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Fecha y Hora
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Patente
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Vehículo
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Motivo
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Estado
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {historialSalidas.map((registro) => (
-                      <tr key={registro.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900">
-                            {new Date(registro.fecha_salida).toLocaleDateString('es-CL', {
-                              day: '2-digit',
-                              month: '2-digit',
-                              year: 'numeric'
-                            })}
-                          </div>
-                          <div className="text-xs text-gray-500">
-                            {registro.hora_salida}
-                          </div>
-                        </td>
-                        <td className="px-4 py-4 whitespace-nowrap">
-                          <span className="text-sm font-medium text-gray-900">
-                            {registro.patente}
-                          </span>
-                        </td>
-                        <td className="px-4 py-4">
-                          <div className="text-sm text-gray-900">
+              <div className="space-y-3">
+                {historialSalidas.map((registro) => (
+                  <div
+                    key={registro.id}
+                    className="rounded-2xl border border-slate-100 p-4 md:p-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between hover:border-blue-200 transition"
+                  >
+                    <div className="flex-1 space-y-2">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          {new Date(registro.fecha_salida).toLocaleDateString('es-CL', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: 'numeric',
+                          })}
+                        </span>
+                        <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                          {registro.hora_salida}
+                        </span>
+                        <span className="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
+                          Salida registrada
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                        <div>
+                          <p className="text-slate-500">Patente</p>
+                          <p className="font-semibold text-slate-900">{registro.patente}</p>
+                        </div>
+                        <div>
+                          <p className="text-slate-500">Vehículo</p>
+                          <p className="font-semibold text-slate-900">
                             {registro.marca && registro.marca !== 'N/A' ? `${registro.marca} ` : ''}
                             {registro.modelo && registro.modelo !== 'N/A' ? registro.modelo : 'N/A'}
-                          </div>
-                          <div className="text-xs text-gray-500">
-                            {registro.tipo && registro.tipo !== 'N/A' ? registro.tipo : ''}
-                          </div>
-                        </td>
-                        <td className="px-4 py-4">
-                          <span className="text-sm text-gray-900">{registro.motivo}</span>
-                        </td>
-                        <td className="px-4 py-4 whitespace-nowrap">
-                          <span className="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
-                            Salida Registrada
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                          </p>
+                          <p className="text-xs text-slate-500">{registro.tipo && registro.tipo !== 'N/A' ? registro.tipo : ''}</p>
+                        </div>
+                        <div>
+                          <p className="text-slate-500">Motivo</p>
+                          <p className="font-semibold text-slate-900">{registro.motivo}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>

@@ -138,7 +138,7 @@ app.post('/api/send-email', async (req, res) => {
     console.log('📧 Inicializando MailerSend...');
     console.log('📧 Enviando correo a:', to);
     console.log('📧 Asunto:', subject);
-
+    
     const emailParams = new EmailParams()
       .setFrom(new Sender(fromEmail, 'APT Taller'))
       .setTo([new Recipient(to)])

@@ -7,17 +7,78 @@ export default function Login() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [usernameError, setUsernameError] = useState('');
+  const [passwordError, setPasswordError] = useState('');
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
 
+  const normalizeRut = (value: string) =>
+    value
+      .replace(/[^0-9kK]/g, '')
+      .toUpperCase();
+
+  const isValidRut = (value: string) => {
+    const clean = normalizeRut(value);
+    if (!/^[0-9]{7,8}[0-9K]$/.test(clean)) return false;
+    const body = clean.slice(0, -1);
+    const dv = clean.slice(-1);
+    let multiplier = 2;
+    const sum = body
+      .split('')
+      .reverse()
+      .reduce((acc, digit) => {
+        const result = acc + parseInt(digit, 10) * multiplier;
+        multiplier = multiplier === 7 ? 2 : multiplier + 1;
+        return result;
+      }, 0);
+    const expected = 11 - (sum % 11);
+    const computed = expected === 11 ? '0' : expected === 10 ? 'K' : String(expected);
+    return dv === computed;
+  };
+
+  const validateForm = () => {
+    let isValid = true;
+    const trimmedUsername = username.trim();
+    const trimmedPassword = password.trim();
+
+    if (!trimmedUsername) {
+      setUsernameError('Ingresa tu usuario o RUT.');
+      isValid = false;
+    } else if (
+      !/^[a-zA-Z0-9._-]{3,50}$/.test(trimmedUsername) &&
+      !isValidRut(trimmedUsername)
+    ) {
+      setUsernameError('Usa un usuario válido o un RUT con dígito verificador (Ej: 12.345.678-9).');
+      isValid = false;
+    } else {
+      setUsernameError('');
+    }
+
+    if (!trimmedPassword) {
+      setPasswordError('La contraseña es obligatoria.');
+      isValid = false;
+    } else if (trimmedPassword.length < 6) {
+      setPasswordError('Debe tener al menos 6 caracteres.');
+      isValid = false;
+    } else {
+      setPasswordError('');
+    }
+
+    return isValid;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    if (!validateForm()) {
+      return;
+    }
+
     setLoading(true);
 
     try {
-      await login(username, password);
+      await login(username.trim(), password.trim());
       navigate('/');
     } catch (err) {
       setError('Usuario o contraseña incorrectos');
@@ -82,21 +143,33 @@ export default function Login() {
             </p>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form onSubmit={handleSubmit} className="space-y-6" noValidate>
             <div className="space-y-2">
               <label htmlFor="username" className="block text-sm font-semibold text-slate-700">
-                Usuario o RUT
+                Usuario
               </label>
               <input
                 id="username"
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-slate-900 shadow-sm transition focus:border-blue-500 focus:outline-none focus:ring-4 focus:ring-blue-500/20"
+                className={`w-full rounded-xl border bg-white px-4 py-3 text-slate-900 shadow-sm transition focus:outline-none focus:ring-4 ${
+                  usernameError
+                    ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20'
+                    : 'border-slate-200 focus:border-blue-500 focus:ring-blue-500/20'
+                }`}
                 placeholder="Ej: 12.345.678-9"
-                required
+                aria-invalid={Boolean(usernameError)}
+                aria-describedby="username-help username-error"
               />
-              <p className="text-xs text-slate-500">Puedes usar tu nombre de usuario o tu RUT.</p>
+              <p id="username-help" className="text-xs text-slate-500">
+                Ingresa tu nombre de usuario corporativo.
+              </p>
+              {usernameError && (
+                <p id="username-error" className="text-xs text-red-600 font-medium">
+                  {usernameError}
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -108,10 +181,20 @@ export default function Login() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-slate-900 shadow-sm transition focus:border-blue-500 focus:outline-none focus:ring-4 focus:ring-blue-500/20"
+                className={`w-full rounded-xl border bg-white px-4 py-3 text-slate-900 shadow-sm transition focus:outline-none focus:ring-4 ${
+                  passwordError
+                    ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20'
+                    : 'border-slate-200 focus:border-blue-500 focus:ring-blue-500/20'
+                }`}
                 placeholder="Ingresa tu contraseña"
-                required
+                aria-invalid={Boolean(passwordError)}
+                aria-describedby="password-error"
               />
+              {passwordError && (
+                <p id="password-error" className="text-xs text-red-600 font-medium">
+                  {passwordError}
+                </p>
+              )}
             </div>
 
             {error && (

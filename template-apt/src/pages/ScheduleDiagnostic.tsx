@@ -384,6 +384,19 @@ if (!hasEnv) {
         await loadAssignedVehicles();
       }
 
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('apt-local-update', {
+            detail: { key: 'apt_solicitudes_diagnostico' },
+          })
+        );
+        window.dispatchEvent(
+          new CustomEvent('apt-local-update', {
+            detail: { key: 'apt_driver_history' },
+          })
+        );
+      }
+
       setSuccess(true);
       
       // Reset form
